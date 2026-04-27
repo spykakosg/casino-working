@@ -56,7 +56,7 @@ async function placeDiceBet(db, { userId, currency, betAmount, target, direction
     const balance = parseFloat(wallet.balance);
 
     // 2. Validate the bet
-    const validation = validateBet({ betAmount, target, direction, balance });
+    const validation = validateBet({ betAmount, target, direction, balance, currency });
     if (!validation.valid) {
       throw new Error(validation.error);
     }
@@ -211,7 +211,7 @@ async function placeRouletteBet(db, { userId, currency, betAmount, betType, betV
     const wallet = walletRes.rows[0];
     const balance = parseFloat(wallet.balance);
 
-    const validation = validateRouletteBet({ betAmount, betType, betValue, balance });
+    const validation = validateRouletteBet({ betAmount, betType, betValue, balance, currency });
     if (!validation.valid) throw new Error(validation.error);
 
     await client.query(`UPDATE wallets SET balance = balance - $1 WHERE id = $2`, [betAmount, wallet.id]);
@@ -253,7 +253,7 @@ async function placeBlackjackBet(db, { userId, currency, betAmount, actions }) {
     const wallet = walletRes.rows[0];
     const balance = parseFloat(wallet.balance);
 
-    const validation = validateBlackjackBet({ betAmount, balance });
+    const validation = validateBlackjackBet({ betAmount, balance, currency });
     if (!validation.valid) throw new Error(validation.error);
 
     await client.query(`UPDATE wallets SET balance = balance - $1 WHERE id = $2`, [betAmount, wallet.id]);
@@ -300,7 +300,7 @@ async function placePlinkoBet(db, { userId, currency, betAmount, rows, risk }) {
     const wallet = walletRes.rows[0];
     const balance = parseFloat(wallet.balance);
 
-    const validation = validatePlinkoBet({ betAmount, rows, risk, balance });
+    const validation = validatePlinkoBet({ betAmount, rows, risk, balance, currency });
     if (!validation.valid) throw new Error(validation.error);
 
     await client.query(`UPDATE wallets SET balance = balance - $1 WHERE id = $2`, [betAmount, wallet.id]);
@@ -342,7 +342,7 @@ async function placeLimboBet(db, { userId, currency, betAmount, target }) {
     const wallet = walletRes.rows[0];
     const balance = parseFloat(wallet.balance);
 
-    const validation = validateLimboBet({ betAmount, target, balance });
+    const validation = validateLimboBet({ betAmount, target, balance, currency });
     if (!validation.valid) throw new Error(validation.error);
 
     await client.query(`UPDATE wallets SET balance = balance - $1 WHERE id = $2`, [betAmount, wallet.id]);
@@ -384,7 +384,7 @@ async function placeSlotsBet(db, { userId, currency, betAmount }) {
     const wallet = walletRes.rows[0];
     const balance = parseFloat(wallet.balance);
 
-    const validation = validateSlotsBet({ betAmount, balance });
+    const validation = validateSlotsBet({ betAmount, balance, currency });
     if (!validation.valid) throw new Error(validation.error);
 
     await client.query(`UPDATE wallets SET balance = balance - $1 WHERE id = $2`, [betAmount, wallet.id]);

@@ -52,7 +52,7 @@ router.post("/start", auth, async (req, res) => {
     const wallet = walletRes.rows[0];
     const balance = parseFloat(wallet.balance);
 
-    const validation = validateMinesBet({ betAmount: amount, mineCount: mines, balance });
+    const validation = validateMinesBet({ betAmount: amount, mineCount: mines, balance, currency });
     if (!validation.valid) throw new Error(validation.error);
 
     await client.query(`UPDATE wallets SET balance = balance - $1 WHERE id = $2`, [amount, wallet.id]);

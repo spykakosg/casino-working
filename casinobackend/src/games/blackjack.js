@@ -14,6 +14,7 @@
  */
 
 const { generateFloat } = require("../engine/rng");
+const { validateMinimumBet } = require("../engine/currency");
 
 const SUITS = ["hearts", "diamonds", "clubs", "spades"];
 const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
@@ -167,8 +168,10 @@ function buildResult(playerCards, dealerCards, betAmount, outcome, doubled, nonc
   };
 }
 
-function validateBlackjackBet({ betAmount, balance }) {
+function validateBlackjackBet({ betAmount, balance, currency }) {
   if (betAmount <= 0) return { valid: false, error: "Bet amount must be positive" };
+  const minCheck = validateMinimumBet(currency, betAmount);
+  if (!minCheck.valid) return minCheck;
   if (betAmount > balance) return { valid: false, error: "Insufficient balance" };
   return { valid: true };
 }

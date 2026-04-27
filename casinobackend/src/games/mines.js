@@ -12,6 +12,7 @@
  */
 
 const { generateFloat } = require("../engine/rng");
+const { validateMinimumBet } = require("../engine/currency");
 
 const GRID_SIZE = 25;
 
@@ -43,8 +44,10 @@ function getNextMultiplier(mineCount, currentRevealed) {
   return calculateMultiplier(mineCount, currentRevealed + 1);
 }
 
-function validateMinesBet({ betAmount, mineCount, balance }) {
+function validateMinesBet({ betAmount, mineCount, balance, currency }) {
   if (betAmount <= 0) return { valid: false, error: "Bet amount must be positive" };
+  const minCheck = validateMinimumBet(currency, betAmount);
+  if (!minCheck.valid) return minCheck;
   if (betAmount > balance) return { valid: false, error: "Insufficient balance" };
   if (!Number.isInteger(mineCount) || mineCount < 1 || mineCount > 24) {
     return { valid: false, error: "Mine count must be between 1 and 24" };

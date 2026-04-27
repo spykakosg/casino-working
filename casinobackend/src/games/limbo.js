@@ -13,6 +13,7 @@
  */
 
 const { generateFloat } = require("../engine/rng");
+const { validateMinimumBet } = require("../engine/currency");
 
 const HOUSE_EDGE = 0.04;
 const MAX_MULTIPLIER = 1000000;
@@ -46,8 +47,10 @@ function resolveLimboBet({ serverSeed, clientSeed, nonce, betAmount, target }) {
   };
 }
 
-function validateLimboBet({ betAmount, target, balance }) {
+function validateLimboBet({ betAmount, target, balance, currency }) {
   if (betAmount <= 0) return { valid: false, error: "Bet amount must be positive" };
+  const minCheck = validateMinimumBet(currency, betAmount);
+  if (!minCheck.valid) return minCheck;
   if (betAmount > balance) return { valid: false, error: "Insufficient balance" };
   if (target < MIN_TARGET || target > MAX_TARGET) {
     return { valid: false, error: `Target must be between ${MIN_TARGET} and ${MAX_TARGET}` };
