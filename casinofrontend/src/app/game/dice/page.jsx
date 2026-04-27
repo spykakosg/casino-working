@@ -185,7 +185,7 @@ export default function DicePage() {
                     min={BC.inputMin(currency)}
                     step={BC.stepSize(currency)}
                     value={betAmount}
-                    onChange={e => setBetAmount(e.target.value)}
+                    onChange={e => setBetAmount(v => BC.normalizeBetInput(e.target.value, currency, v))}
                     className="flex-1 bg-casino-surface border border-casino-border rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-gold transition-colors min-w-0"
                   />
                   <span className="bg-casino-surface border border-casino-border rounded-lg px-2 flex items-center text-casino-muted font-mono text-xs shrink-0">

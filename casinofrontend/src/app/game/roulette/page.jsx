@@ -567,7 +567,7 @@ export default function RoulettePage() {
             <div className="flex gap-2 items-end">
               <div className="flex-1 space-y-0.5">
                 <span className="text-[10px] text-casino-muted font-mono uppercase">Bet</span>
-                <input type="number" min={BC.inputMin(currency)} step={BC.stepSize(currency)} value={betAmount} onChange={e => setBetAmount(e.target.value)}
+                <input type="number" min={BC.inputMin(currency)} step={BC.stepSize(currency)} value={betAmount} onChange={e => setBetAmount(v => BC.normalizeBetInput(e.target.value, currency, v))}
                   className="w-full bg-casino-surface border border-casino-border rounded px-2 py-1.5 text-white font-mono text-xs focus:outline-none focus:border-gold/50" />
                 <div className="flex gap-0.5">
                   <button onClick={halfBet} className="flex-1 bg-casino-surface border border-casino-border rounded px-1 py-0.5 text-[10px] text-casino-muted hover:text-white">½</button>

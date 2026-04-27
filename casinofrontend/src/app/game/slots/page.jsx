@@ -39,10 +39,10 @@ function SlotCell({ symbol, spinning, won }) {
   const info = SYMBOL_MAP[display] || SYMBOL_MAP.lemon;
 
   return (
-    <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-lg flex items-center justify-center text-2xl sm:text-3xl transition-all duration-300 ${
-      won ? "bg-gold/20 border-2 border-gold shadow-lg shadow-gold/30 scale-110" :
-      spinning ? "bg-casino-surface/80 border border-casino-border animate-pulse" :
-      "bg-casino-surface border border-casino-border"
+    <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center text-3xl sm:text-4xl transition-all duration-300 ${
+      won ? "bg-gradient-to-b from-yellow-400/30 to-orange-500/20 border-2 border-yellow-300 shadow-[0_0_18px_rgba(255,200,0,.45)] scale-110" :
+      spinning ? "bg-[#0f1430] border border-fuchsia-400/40 animate-pulse" :
+      "bg-[#101734] border border-blue-500/30"
     }`}>
       <span className={`${spinning ? "animate-bounce" : ""}`}>{info.emoji}</span>
     </div>
@@ -185,8 +185,8 @@ export default function SlotsPage() {
         <div className="lg:col-span-2 space-y-3">
 
           {/* Slot Machine */}
-          <div className={`bg-casino-card border rounded-2xl p-4 relative overflow-hidden transition-all duration-500 ${
-            winAnim ? "border-gold shadow-lg shadow-gold/20" : "border-casino-border"
+          <div className={`bg-[#070b22] border rounded-3xl p-4 relative overflow-hidden transition-all duration-500 ${
+            winAnim ? "border-yellow-300 shadow-[0_0_40px_rgba(255,200,0,.25)]" : "border-blue-500/30"
           }`}>
             {/* Decorative lights */}
             {winAnim && (
@@ -197,14 +197,24 @@ export default function SlotsPage() {
             )}
 
             <div className="relative z-10">
-              <div className="text-center mb-3">
-                <h2 className={`text-xl font-black tracking-wider transition-colors ${winAnim ? "text-gold animate-pulse" : "text-gold"}`}>
-                  MEGA SLOTS
-                </h2>
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                <div className="rounded-xl border border-yellow-400/30 bg-gradient-to-r from-yellow-500/15 to-orange-500/15 px-3 py-2">
+                  <p className="text-[10px] uppercase tracking-widest text-yellow-300/80 font-mono">Jackpot</p>
+                  <p className="text-yellow-300 font-black text-lg">$251,459.70</p>
+                </div>
+                <div className="rounded-xl border border-fuchsia-400/30 bg-gradient-to-r from-blue-500/15 to-fuchsia-500/15 px-3 py-2 text-center">
+                  <h2 className={`text-xl font-black tracking-wider transition-colors ${winAnim ? "text-yellow-300 animate-pulse" : "text-blue-200"}`}>
+                    CRYPTO SLOTS
+                  </h2>
+                </div>
+                <div className="rounded-xl border border-fuchsia-400/30 bg-gradient-to-r from-fuchsia-500/15 to-violet-500/15 px-3 py-2 text-right">
+                  <p className="text-[10px] uppercase tracking-widest text-fuchsia-300/80 font-mono">Multiplier</p>
+                  <p className="text-fuchsia-300 font-black text-lg">{result?.multiplier ? `x${result.multiplier}` : "x--"}</p>
+                </div>
               </div>
 
               {/* Machine body */}
-              <div className="bg-gradient-to-b from-gray-900 to-black rounded-xl p-3 border border-gold/20 relative">
+              <div className="bg-gradient-to-b from-[#101734] to-[#050914] rounded-2xl p-3 border border-blue-500/35 relative">
                 {/* Top light bar */}
                 <div className="flex justify-center gap-1 mb-2">
                   {Array(9).fill(0).map((_, i) => (
@@ -217,7 +227,7 @@ export default function SlotsPage() {
                 </div>
 
                 {/* Reels area */}
-                <div className="bg-black/50 rounded-lg p-2 border border-gray-800">
+                <div className="bg-black/40 rounded-xl p-2 border border-blue-500/30">
                   {displayGrid.map((row, rowIdx) => (
                     <div key={rowIdx} className="flex items-center justify-center gap-1.5 sm:gap-2 py-0.5">
                       {row.map((sym, colIdx) => (
@@ -272,11 +282,11 @@ export default function SlotsPage() {
           )}
 
           {/* Controls */}
-          <div className="bg-casino-card border border-casino-border rounded-2xl p-4 space-y-3">
+          <div className="bg-[#0b1230] border border-blue-500/30 rounded-2xl p-4 space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <span className="text-xs text-casino-muted font-mono uppercase tracking-widest">Bet Amount</span>
-                <input type="number" min={BC.inputMin(currency)} step={BC.stepSize(currency)} value={betAmount} onChange={e => setBetAmount(e.target.value)}
+                <input type="number" min={BC.inputMin(currency)} step={BC.stepSize(currency)} value={betAmount} onChange={e => setBetAmount(v => BC.normalizeBetInput(e.target.value, currency, v))}
                   className="w-full bg-casino-surface border border-casino-border rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-gold/50" />
                 <div className="flex gap-1">
                   <button onClick={halfBet} className="flex-1 bg-casino-surface border border-casino-border rounded px-2 py-1 text-xs text-casino-muted hover:text-white transition-colors">1/2</button>

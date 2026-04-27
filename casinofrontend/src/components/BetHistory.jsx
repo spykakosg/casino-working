@@ -42,10 +42,11 @@ function BetRow({ bet }) {
   const payout = parseFloat(bet.payout || 0);
   const profit = bet.profit !== undefined && bet.profit !== null ? parseFloat(bet.profit) : payout - amount;
   const roll = typeof bet.roll === "number" ? bet.roll : parseFloat(bet.roll);
-  const isPush = Math.abs(profit) < 0.0001;
-  const isWin = profit > 0.0001;
   const ccy = bet.currency || "";
   const isCrypto = ccy === "BTC" || ccy === "ETH_POLYGON";
+  const epsilon = isCrypto ? 0.0000000001 : 0.00001;
+  const isPush = Math.abs(profit) < epsilon;
+  const isWin = profit > epsilon;
   const dec = isCrypto ? 10 : 5;
   function fmt(v) { return v.toFixed(dec); }
   return (

@@ -87,3 +87,27 @@ export function maxBetAmount(currency, balance) {
   const dec = betDecimals(currency);
   return Math.min(max, balance || 0).toFixed(dec);
 }
+
+export function normalizeBetInput(nextValue, currency, previousValue = "") {
+  if (nextValue === "") return "";
+  const parsed = Number(nextValue);
+  if (!Number.isFinite(parsed)) return previousValue;
+
+  if (isCrypto(currency)) {
+    const safe = Math.max(minBet(currency), parsed);
+    return safe.toFixed(8);
+  }
+
+  // USD-like behavior:
+  // 1 -> down arrow should become 0.001 (min)
+  // 0.001 -> up arrow should become 1
+  let value = parsed;
+  if (value <= 0) return "0.001";
+  if (Math.abs(value - 1.001) < 1e-9) value = 1;
+
+  // Normalize values like 2.001/3.001 that can appear from native number steppers
+  const nearWeirdStep = Math.abs((value * 1000) % 1000 - 1) < 1e-7;
+  if (value > 1 && nearWeirdStep) value = value - 0.001;
+
+  return Number(value.toFixed(3)).toString();
+}
