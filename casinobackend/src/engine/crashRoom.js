@@ -9,6 +9,9 @@
 
 const crypto = require("crypto");
 const { getCrashPoint, getMultiplierAtTime, getTimeForMultiplier } = require("../games/crash");
+const { validateMaxBet } = require("./maxBet");
+const { validateMinimumBet } = require("./currency");
+const { roundAmount } = require("./amount");
 
 const WAITING_DURATION_MS = 5000;  // 5s betting window
 const CRASHED_DURATION_MS = 3000;  // 3s result display
@@ -146,6 +149,10 @@ class CrashRoom {
   // ─── Place Bet (public) ────────────────────────────────────────────────────
   async placeBet(userId, username, { betAmount, currency, autoCashout }) {
     if (betAmount <= 0) throw new Error("Bet amount must be positive");
+    const minCheck = validateMinimumBet(currency, betAmount);
+    if (!minCheck.valid) throw new Error(minCheck.error);
+    const maxCheck = await validateMaxBet(currency, betAmount);
+    if (!maxCheck.valid) throw new Error(maxCheck.error);
 
     // During RUNNING — queue for next round
     if (this.state === "running") {
@@ -250,7 +257,7 @@ class CrashRoom {
     const bet = this.bets.get(userId);
     if (!bet || bet.cashedOut) return;
     bet.cashedOut = true;
-    const payout = parseFloat((bet.betAmount * multiplier).toFixed(8));
+    const payout = roundAmount(bet.betAmount * multiplier, bet.currency);
     bet.payout   = payout;
 
     await this.db.query(

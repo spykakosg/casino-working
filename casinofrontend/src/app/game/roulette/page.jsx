@@ -424,7 +424,8 @@ export default function RoulettePage() {
     low: 2, high: 2, dozen1: 3, dozen2: 3, dozen3: 3, column1: 3, column2: 3, column3: 3,
   };
   const currentPayout = betType ? (payoutMap[betType] || 2) : 0;
-  const potentialWin = ((parseFloat(betAmount) || 0) * currentPayout).toFixed(5);
+  const amountDec = BC.displayDecimals(currency);
+  const potentialWin = ((parseFloat(betAmount) || 0) * currentPayout).toFixed(amountDec);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -443,7 +444,7 @@ export default function RoulettePage() {
                     getColor(result.result) === "green" ? "bg-green-600" : getColor(result.result) === "red" ? "bg-red-600" : "bg-gray-700"
                   }`}>{result.result}</div>
                   <p className={`text-sm font-bold mt-1 ${result.won ? "text-green-400" : "text-red-400"}`}>
-                    {result.won ? `+${result.profit.toFixed(5)}` : result.profit.toFixed(5)}
+                    {result.won ? `+${result.profit.toFixed(amountDec)}` : result.profit.toFixed(amountDec)}
                   </p>
                 </div>
               )}
@@ -566,7 +567,7 @@ export default function RoulettePage() {
             <div className="flex gap-2 items-end">
               <div className="flex-1 space-y-0.5">
                 <span className="text-[10px] text-casino-muted font-mono uppercase">Bet</span>
-                <input type="number" min={BC.minBet(currency)} step={BC.stepSize(currency)} value={betAmount} onChange={e => setBetAmount(e.target.value)}
+                <input type="number" min={BC.inputMin(currency)} step={BC.stepSize(currency)} value={betAmount} onChange={e => setBetAmount(e.target.value)}
                   className="w-full bg-casino-surface border border-casino-border rounded px-2 py-1.5 text-white font-mono text-xs focus:outline-none focus:border-gold/50" />
                 <div className="flex gap-0.5">
                   <button onClick={halfBet} className="flex-1 bg-casino-surface border border-casino-border rounded px-1 py-0.5 text-[10px] text-casino-muted hover:text-white">½</button>

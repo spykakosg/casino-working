@@ -27,6 +27,10 @@ export function minBet(currency) {
   return isCrypto(currency) ? 0.00000001 : 0.001;
 }
 
+export function inputMin(currency) {
+  return isCrypto(currency) ? minBet(currency) : 0;
+}
+
 export function defaultBet(currency) {
   return isCrypto(currency) ? "0.00001" : "1";
 }

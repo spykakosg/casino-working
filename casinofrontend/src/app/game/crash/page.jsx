@@ -10,6 +10,7 @@ import * as BC from "@/lib/betConfig";
 
 const CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
 const CCY_SHORT  = { USDT_POLYGON: "USDT", ETH_POLYGON: "ETH", USDT_TRON: "USDT₮", BTC: "BTC" };
+const fmtAmount = (value, currency) => parseFloat(value || 0).toFixed(BC.displayDecimals(currency));
 
 export default function CrashPage() {
   const { user, loading: authLoading } = useAuth();
@@ -177,12 +178,12 @@ export default function CrashPage() {
                     </div>
                     {myBet && (
                       <div className="mt-2 text-green-400 font-mono text-sm">
-                        ✓ Bet placed: {myBet.betAmount} {CCY_SHORT[myBet.currency]}
+                        ✓ Bet placed: {fmtAmount(myBet.betAmount, myBet.currency)} {CCY_SHORT[myBet.currency]}
                       </div>
                     )}
                     {isQueued && (
                       <div className="mt-2 text-yellow-400 font-mono text-sm animate-pulse">
-                        ⏳ Queued: {myQueuedBet.betAmount} {CCY_SHORT[myQueuedBet.currency]}
+                        ⏳ Queued: {fmtAmount(myQueuedBet.betAmount, myQueuedBet.currency)} {CCY_SHORT[myQueuedBet.currency]}
                       </div>
                     )}
                   </div>
@@ -193,17 +194,17 @@ export default function CrashPage() {
                     </div>
                     {myBet && !myBet.cashedOut && (
                       <div className="mt-2 text-gold font-mono text-sm animate-pulse">
-                        🎯 {myBet.betAmount} {CCY_SHORT[myBet.currency]} riding
+                        🎯 {fmtAmount(myBet.betAmount, myBet.currency)} {CCY_SHORT[myBet.currency]} riding
                       </div>
                     )}
                     {myBet && myBet.cashedOut && (
                       <div className="mt-2 text-green-400 font-mono text-sm">
-                        ✓ Cashed out {myBet.cashoutAt?.toFixed(2)}× → +{parseFloat(myBet.payout).toFixed(5)}
+                        ✓ Cashed out {myBet.cashoutAt?.toFixed(2)}× → +{fmtAmount(myBet.payout, myBet.currency)}
                       </div>
                     )}
                     {isQueued && (
                       <div className="mt-2 text-yellow-400 font-mono text-sm">
-                        ⏳ Next round: {myQueuedBet.betAmount} {CCY_SHORT[myQueuedBet.currency]}
+                        ⏳ Next round: {fmtAmount(myQueuedBet.betAmount, myQueuedBet.currency)} {CCY_SHORT[myQueuedBet.currency]}
                       </div>
                     )}
                   </div>
@@ -215,7 +216,7 @@ export default function CrashPage() {
                     <div className="text-red-400 font-mono text-sm font-semibold mt-1">CRASHED</div>
                     {myBet && !myBet.cashedOut && (
                       <div className="mt-2 text-red-400 font-mono text-sm">
-                        ✗ Lost {myBet.betAmount} {CCY_SHORT[myBet.currency]}
+                        ✗ Lost {fmtAmount(myBet.betAmount, myBet.currency)} {CCY_SHORT[myBet.currency]}
                       </div>
                     )}
                   </div>
@@ -251,7 +252,7 @@ export default function CrashPage() {
                   Bet Amount
                 </label>
                 <input
-                  type="number" min={BC.minBet(currency)} step={BC.stepSize(currency)}
+                  type="number" min={BC.inputMin(currency)} step={BC.stepSize(currency)}
                   value={betAmount}
                   onChange={e => setBetAmount(e.target.value)}
                   disabled={alreadyIn || autoplayActive}
@@ -435,13 +436,13 @@ export default function CrashPage() {
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-mono text-white truncate">{bet.username}</div>
                         <div className="text-xs text-casino-muted font-mono">
-                          {bet.betAmount} {CCY_SHORT[bet.currency] || ""}
+                          {fmtAmount(bet.betAmount, bet.currency)} {CCY_SHORT[bet.currency] || ""}
                         </div>
                       </div>
                       {bet.cashedOut ? (
                         <div className="text-right shrink-0">
                           <div className="text-green-400 text-xs font-mono">{bet.cashoutAt?.toFixed(2)}×</div>
-                          <div className="text-green-400 text-xs font-mono">+{parseFloat(bet.payout||0).toFixed(5)}</div>
+                          <div className="text-green-400 text-xs font-mono">+{fmtAmount(bet.payout || 0, bet.currency)}</div>
                         </div>
                       ) : (
                         <div className={`text-xs font-mono font-semibold shrink-0 ${
@@ -467,13 +468,13 @@ export default function CrashPage() {
                           <span className="text-casino-muted text-xs font-mono">#{bet.round_id}</span>
                         </div>
                         <div className="text-xs text-casino-muted font-mono">
-                          {parseFloat(bet.bet_amount).toFixed(5)} {CCY_SHORT[bet.currency]}
+                          {fmtAmount(bet.bet_amount, bet.currency)} {CCY_SHORT[bet.currency]}
                         </div>
                       </div>
                       <div className={`text-xs font-mono font-semibold shrink-0 ${bet.won ? "text-green-400" : "text-red-400"}`}>
                         {bet.won
-                          ? `+${(parseFloat(bet.payout) - parseFloat(bet.bet_amount)).toFixed(5)}`
-                          : `-${parseFloat(bet.bet_amount).toFixed(5)}`}
+                          ? `+${fmtAmount(parseFloat(bet.payout) - parseFloat(bet.bet_amount), bet.currency)}`
+                          : `-${fmtAmount(bet.bet_amount, bet.currency)}`}
                       </div>
                     </div>
                   ))

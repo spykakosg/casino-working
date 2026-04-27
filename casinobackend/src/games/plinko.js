@@ -13,6 +13,8 @@
  */
 
 const { generateFloat } = require("../engine/rng");
+const { validateMinimumBet } = require("../engine/currency");
+const { roundAmount } = require("../engine/amount");
 
 const MULTIPLIERS = {
   8: {
@@ -47,12 +49,12 @@ function dropPlinko(serverSeed, clientSeed, nonce, rows) {
   return { path, bucket: position };
 }
 
-function resolvePlinkoBet({ serverSeed, clientSeed, nonce, betAmount, rows, risk }) {
+function resolvePlinkoBet({ serverSeed, clientSeed, nonce, betAmount, rows, risk, currency }) {
   const { path, bucket } = dropPlinko(serverSeed, clientSeed, nonce, rows);
   const multipliers = MULTIPLIERS[rows][risk];
   const multiplier = multipliers[bucket];
-  const payout = parseFloat((betAmount * multiplier).toFixed(8));
-  const profit = parseFloat((payout - betAmount).toFixed(8));
+  const payout = roundAmount(betAmount * multiplier, currency);
+  const profit = roundAmount(payout - betAmount, currency);
   const won = payout > betAmount;
 
   return {
@@ -69,8 +71,10 @@ function resolvePlinkoBet({ serverSeed, clientSeed, nonce, betAmount, rows, risk
   };
 }
 
-function validatePlinkoBet({ betAmount, rows, risk, balance }) {
+function validatePlinkoBet({ betAmount, rows, risk, balance, currency }) {
   if (betAmount <= 0) return { valid: false, error: "Bet amount must be positive" };
+  const minCheck = validateMinimumBet(currency, betAmount);
+  if (!minCheck.valid) return minCheck;
   if (betAmount > balance) return { valid: false, error: "Insufficient balance" };
   if (!VALID_ROWS.includes(rows)) return { valid: false, error: "Rows must be 8, 12, or 16" };
   if (!VALID_RISKS.includes(risk)) return { valid: false, error: "Risk must be low, medium, or high" };

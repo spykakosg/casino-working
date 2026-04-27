@@ -135,7 +135,7 @@ export default function LimboPage() {
                   </p>
                   {result && (
                     <p className={`text-sm font-mono mt-2 ${result.profit >= 0 ? "text-green-400" : "text-red-400"}`}>
-                      {result.profit >= 0 ? "+" : ""}{result.profit.toFixed(5)}
+                      {result.profit >= 0 ? "+" : ""}{result.profit.toFixed(BC.displayDecimals(currency))}
                     </p>
                   )}
                 </>
@@ -187,7 +187,7 @@ export default function LimboPage() {
               </div>
               <div className="space-y-1">
                 <span className="text-xs text-casino-muted font-mono uppercase tracking-widest">Bet Amount</span>
-                <input type="number" min={BC.minBet(currency)} step={BC.stepSize(currency)} value={betAmount} onChange={e => setBetAmount(e.target.value)}
+                <input type="number" min={BC.inputMin(currency)} step={BC.stepSize(currency)} value={betAmount} onChange={e => setBetAmount(e.target.value)}
                   className="w-full bg-casino-surface border border-casino-border rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-gold/50" />
                 <div className="flex gap-1">
                   <button onClick={halfBet} className="flex-1 bg-casino-surface border border-casino-border rounded px-2 py-1 text-xs text-casino-muted hover:text-white transition-colors">1/2</button>

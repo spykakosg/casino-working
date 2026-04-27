@@ -14,6 +14,8 @@
  */
 
 const { generateFloat } = require("../engine/rng");
+const { validateMinimumBet } = require("../engine/currency");
+const { roundAmount } = require("../engine/amount");
 
 const SUITS = ["hearts", "diamonds", "clubs", "spades"];
 const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
@@ -76,7 +78,7 @@ function playDealerHand(dealerCards, serverSeed, clientSeed, nonce, nextCursor) 
  * actions: array of "hit" | "stand" | "double"
  * The game plays out deterministically from the seed.
  */
-function resolveBlackjackGame({ serverSeed, clientSeed, nonce, betAmount, actions }) {
+function resolveBlackjackGame({ serverSeed, clientSeed, nonce, betAmount, actions, currency }) {
   const { playerCards, dealerCards } = dealInitialHands(serverSeed, clientSeed, nonce);
   let cursor = 4; // next card cursor
   let currentBet = betAmount;
@@ -86,15 +88,15 @@ function resolveBlackjackGame({ serverSeed, clientSeed, nonce, betAmount, action
   if (isBlackjack(playerCards)) {
     if (isBlackjack(dealerCards)) {
       // Push
-      return buildResult(playerCards, dealerCards, currentBet, "push", false, nonce);
+      return buildResult(playerCards, dealerCards, currentBet, "push", false, nonce, currency);
     }
     // Player blackjack — 3:2 payout
-    return buildResult(playerCards, dealerCards, currentBet, "blackjack", false, nonce);
+    return buildResult(playerCards, dealerCards, currentBet, "blackjack", false, nonce, currency);
   }
 
   // If dealer has blackjack, player loses immediately
   if (isBlackjack(dealerCards)) {
-    return buildResult(playerCards, dealerCards, currentBet, "dealer_blackjack", false, nonce);
+    return buildResult(playerCards, dealerCards, currentBet, "dealer_blackjack", false, nonce, currency);
   }
 
   // Play out player actions
@@ -103,7 +105,7 @@ function resolveBlackjackGame({ serverSeed, clientSeed, nonce, betAmount, action
       playerCards.push(drawCard(serverSeed, clientSeed, nonce, cursor));
       cursor++;
       if (handValue(playerCards) > 21) {
-        return buildResult(playerCards, dealerCards, currentBet, "bust", doubled, nonce);
+        return buildResult(playerCards, dealerCards, currentBet, "bust", doubled, nonce, currency);
       }
     } else if (action === "double") {
       doubled = true;
@@ -111,7 +113,7 @@ function resolveBlackjackGame({ serverSeed, clientSeed, nonce, betAmount, action
       playerCards.push(drawCard(serverSeed, clientSeed, nonce, cursor));
       cursor++;
       if (handValue(playerCards) > 21) {
-        return buildResult(playerCards, dealerCards, currentBet, "bust", doubled, nonce);
+        return buildResult(playerCards, dealerCards, currentBet, "bust", doubled, nonce, currency);
       }
       break; // double means one card then stand
     } else if (action === "stand") {
@@ -132,10 +134,10 @@ function resolveBlackjackGame({ serverSeed, clientSeed, nonce, betAmount, action
   else if (playerVal < dealerVal) outcome = "lose";
   else outcome = "push";
 
-  return buildResult(playerCards, finalDealerCards, currentBet, outcome, doubled, nonce);
+  return buildResult(playerCards, finalDealerCards, currentBet, outcome, doubled, nonce, currency);
 }
 
-function buildResult(playerCards, dealerCards, betAmount, outcome, doubled, nonce) {
+function buildResult(playerCards, dealerCards, betAmount, outcome, doubled, nonce, currency) {
   const playerValue = handValue(playerCards);
   const dealerValue = handValue(dealerCards);
 
@@ -148,7 +150,7 @@ function buildResult(playerCards, dealerCards, betAmount, outcome, doubled, nonc
     default:                multiplier = 0; break; // bust, lose, dealer_blackjack
   }
 
-  const payout = parseFloat((betAmount * multiplier).toFixed(8));
+  const payout = roundAmount(betAmount * multiplier, currency);
   const won = multiplier > 1;
 
   return {
@@ -161,14 +163,16 @@ function buildResult(playerCards, dealerCards, betAmount, outcome, doubled, nonc
     betAmount,
     multiplier,
     payout,
-    profit: parseFloat((payout - betAmount).toFixed(8)),
+    profit: roundAmount(payout - betAmount, currency),
     doubled,
     nonce,
   };
 }
 
-function validateBlackjackBet({ betAmount, balance }) {
+function validateBlackjackBet({ betAmount, balance, currency }) {
   if (betAmount <= 0) return { valid: false, error: "Bet amount must be positive" };
+  const minCheck = validateMinimumBet(currency, betAmount);
+  if (!minCheck.valid) return minCheck;
   if (betAmount > balance) return { valid: false, error: "Insufficient balance" };
   return { valid: true };
 }

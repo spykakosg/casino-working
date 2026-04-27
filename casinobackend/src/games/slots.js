@@ -16,6 +16,8 @@
  */
 
 const { generateFloat } = require("../engine/rng");
+const { validateMinimumBet } = require("../engine/currency");
+const { roundAmount } = require("../engine/amount");
 
 const SYMBOLS = [
   { name: "seven",  emoji: "7",   weight: 2,  pay5: 100, pay4: 25, pay3: 10 },
@@ -74,7 +76,7 @@ function evaluatePayline(symbols) {
   return { match: 0, symbol: null, multiplier: 0 };
 }
 
-function resolveSlotsBet({ serverSeed, clientSeed, nonce, betAmount }) {
+function resolveSlotsBet({ serverSeed, clientSeed, nonce, betAmount, currency }) {
   const grid = spinReels(serverSeed, clientSeed, nonce);
   const paylines = getPaylines(grid);
 
@@ -89,8 +91,8 @@ function resolveSlotsBet({ serverSeed, clientSeed, nonce, betAmount }) {
 
   const multiplier = bestResult.multiplier;
   const won = multiplier > 0;
-  const payout = won ? parseFloat((betAmount * multiplier).toFixed(8)) : 0;
-  const profit = parseFloat((payout - betAmount).toFixed(8));
+  const payout = won ? roundAmount(betAmount * multiplier, currency) : 0;
+  const profit = roundAmount(payout - betAmount, currency);
 
   const gridResult = grid.map(row => row.map(sym => ({
     name: sym.name,
@@ -111,8 +113,10 @@ function resolveSlotsBet({ serverSeed, clientSeed, nonce, betAmount }) {
   };
 }
 
-function validateSlotsBet({ betAmount, balance }) {
+function validateSlotsBet({ betAmount, balance, currency }) {
   if (betAmount <= 0) return { valid: false, error: "Bet amount must be positive" };
+  const minCheck = validateMinimumBet(currency, betAmount);
+  if (!minCheck.valid) return minCheck;
   if (betAmount > balance) return { valid: false, error: "Insufficient balance" };
   return { valid: true };
 }

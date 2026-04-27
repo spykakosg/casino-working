@@ -12,9 +12,10 @@ const express = require("express");
 const router = express.Router();
 const crypto = require("crypto");
 const { hashServerSeed } = require("../engine/rng");
-const { dealInitialHands, drawCard, handValue, isBlackjack, cardValue } = require("../games/blackjack");
+const { dealInitialHands, drawCard, handValue, isBlackjack, cardValue, validateBlackjackBet } = require("../games/blackjack");
 const auth = require("../middleware/auth");
 const { validateMaxBet } = require("../engine/maxBet");
+const { roundAmount } = require("../engine/amount");
 
 // In-memory game sessions — { gameId: { userId, wallet, cards, ... } }
 const games = new Map();
@@ -64,7 +65,8 @@ router.post("/deal", auth, async (req, res) => {
     const wallet = walletRes.rows[0];
     const balance = parseFloat(wallet.balance);
 
-    if (amount > balance) throw new Error("Insufficient balance");
+    const validation = validateBlackjackBet({ betAmount: amount, balance, currency });
+    if (!validation.valid) throw new Error(validation.error);
 
     // Deduct bet
     await client.query(`UPDATE wallets SET balance = balance - $1 WHERE id = $2`, [amount, wallet.id]);
@@ -106,8 +108,8 @@ router.post("/deal", auth, async (req, res) => {
       else if (playerBJ)        { outcome = "blackjack"; multiplier = 2.5; }
       else                      { outcome = "dealer_blackjack"; multiplier = 0; }
 
-      const payout = parseFloat((amount * multiplier).toFixed(8));
-      const profit = parseFloat((payout - amount).toFixed(8));
+      const payout = roundAmount(amount * multiplier, currency);
+      const profit = roundAmount(payout - amount, currency);
 
       // Credit payout
       if (payout > 0) {
@@ -302,8 +304,8 @@ router.post("/action", auth, async (req, res) => {
   else if (outcome === "push") multiplier = 1;
   else multiplier = 0;
 
-  const payout = parseFloat((totalBet * multiplier).toFixed(8));
-  const profit = parseFloat((payout - totalBet).toFixed(8));
+  const payout = roundAmount(totalBet * multiplier, currency);
+  const profit = roundAmount(payout - totalBet, currency);
 
   // Credit payout and record bet
   const dbClient = await req.db.connect();

@@ -56,7 +56,7 @@ async function placeDiceBet(db, { userId, currency, betAmount, target, direction
     const balance = parseFloat(wallet.balance);
 
     // 2. Validate the bet
-    const validation = validateBet({ betAmount, target, direction, balance });
+    const validation = validateBet({ betAmount, target, direction, balance, currency });
     if (!validation.valid) {
       throw new Error(validation.error);
     }
@@ -75,6 +75,7 @@ async function placeDiceBet(db, { userId, currency, betAmount, target, direction
       betAmount,
       target,
       direction,
+      currency,
     });
 
     // 5. Credit payout (partial or full — e.g. plinko 0.5x returns partial)
@@ -211,14 +212,14 @@ async function placeRouletteBet(db, { userId, currency, betAmount, betType, betV
     const wallet = walletRes.rows[0];
     const balance = parseFloat(wallet.balance);
 
-    const validation = validateRouletteBet({ betAmount, betType, betValue, balance });
+    const validation = validateRouletteBet({ betAmount, betType, betValue, balance, currency });
     if (!validation.valid) throw new Error(validation.error);
 
     await client.query(`UPDATE wallets SET balance = balance - $1 WHERE id = $2`, [betAmount, wallet.id]);
 
     const result = resolveRouletteBet({
       serverSeed: wallet.server_seed, clientSeed: wallet.client_seed,
-      nonce: wallet.nonce, betAmount, betType, betValue,
+      nonce: wallet.nonce, betAmount, betType, betValue, currency,
     });
 
     if (result.payout > 0) {
@@ -253,14 +254,14 @@ async function placeBlackjackBet(db, { userId, currency, betAmount, actions }) {
     const wallet = walletRes.rows[0];
     const balance = parseFloat(wallet.balance);
 
-    const validation = validateBlackjackBet({ betAmount, balance });
+    const validation = validateBlackjackBet({ betAmount, balance, currency });
     if (!validation.valid) throw new Error(validation.error);
 
     await client.query(`UPDATE wallets SET balance = balance - $1 WHERE id = $2`, [betAmount, wallet.id]);
 
     const result = resolveBlackjackGame({
       serverSeed: wallet.server_seed, clientSeed: wallet.client_seed,
-      nonce: wallet.nonce, betAmount, actions,
+      nonce: wallet.nonce, betAmount, actions, currency,
     });
 
     // For double down, deduct extra bet amount
@@ -300,14 +301,14 @@ async function placePlinkoBet(db, { userId, currency, betAmount, rows, risk }) {
     const wallet = walletRes.rows[0];
     const balance = parseFloat(wallet.balance);
 
-    const validation = validatePlinkoBet({ betAmount, rows, risk, balance });
+    const validation = validatePlinkoBet({ betAmount, rows, risk, balance, currency });
     if (!validation.valid) throw new Error(validation.error);
 
     await client.query(`UPDATE wallets SET balance = balance - $1 WHERE id = $2`, [betAmount, wallet.id]);
 
     const result = resolvePlinkoBet({
       serverSeed: wallet.server_seed, clientSeed: wallet.client_seed,
-      nonce: wallet.nonce, betAmount, rows, risk,
+      nonce: wallet.nonce, betAmount, rows, risk, currency,
     });
 
     if (result.payout > 0) {
@@ -342,14 +343,14 @@ async function placeLimboBet(db, { userId, currency, betAmount, target }) {
     const wallet = walletRes.rows[0];
     const balance = parseFloat(wallet.balance);
 
-    const validation = validateLimboBet({ betAmount, target, balance });
+    const validation = validateLimboBet({ betAmount, target, balance, currency });
     if (!validation.valid) throw new Error(validation.error);
 
     await client.query(`UPDATE wallets SET balance = balance - $1 WHERE id = $2`, [betAmount, wallet.id]);
 
     const result = resolveLimboBet({
       serverSeed: wallet.server_seed, clientSeed: wallet.client_seed,
-      nonce: wallet.nonce, betAmount, target,
+      nonce: wallet.nonce, betAmount, target, currency,
     });
 
     if (result.payout > 0) {
@@ -384,14 +385,14 @@ async function placeSlotsBet(db, { userId, currency, betAmount }) {
     const wallet = walletRes.rows[0];
     const balance = parseFloat(wallet.balance);
 
-    const validation = validateSlotsBet({ betAmount, balance });
+    const validation = validateSlotsBet({ betAmount, balance, currency });
     if (!validation.valid) throw new Error(validation.error);
 
     await client.query(`UPDATE wallets SET balance = balance - $1 WHERE id = $2`, [betAmount, wallet.id]);
 
     const result = resolveSlotsBet({
       serverSeed: wallet.server_seed, clientSeed: wallet.client_seed,
-      nonce: wallet.nonce, betAmount,
+      nonce: wallet.nonce, betAmount, currency,
     });
 
     if (result.payout > 0) {

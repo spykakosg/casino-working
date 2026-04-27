@@ -17,12 +17,13 @@
  */
 
 const { rollDice } = require("../engine/rng");
+const { validateMinimumBet } = require("../engine/currency");
+const { roundAmount } = require("../engine/amount");
 
 const HOUSE_EDGE = 1; // 1%
 const MIN_TARGET = 2; // min probability: 2% (max multiplier ~49.5x)
 const MAX_TARGET = 98; // max probability: 98% (min multiplier ~1.01x)
 const MAX_MULTIPLIER = 49.5;
-const MIN_BET_USDT = 0.001;
 
 /**
  * Calculate win probability for a given target + direction
@@ -50,7 +51,7 @@ function calcMultiplier(winProbability) {
  * Validate a bet before processing
  * @returns {{ valid: boolean, error?: string }}
  */
-function validateBet({ betAmount, target, direction, balance }) {
+function validateBet({ betAmount, target, direction, balance, currency }) {
   if (!["under", "over"].includes(direction)) {
     return { valid: false, error: "Direction must be 'under' or 'over'" };
   }
@@ -60,12 +61,8 @@ function validateBet({ betAmount, target, direction, balance }) {
       error: `Target must be between ${MIN_TARGET} and ${MAX_TARGET}`,
     };
   }
-  if (betAmount < MIN_BET_USDT) {
-    return {
-      valid: false,
-      error: `Minimum bet is ${MIN_BET_USDT} USDT`,
-    };
-  }
+  const minCheck = validateMinimumBet(currency, betAmount);
+  if (!minCheck.valid) return minCheck;
   if (betAmount > balance) {
     return { valid: false, error: "Insufficient balance" };
   }
@@ -85,7 +82,7 @@ function validateBet({ betAmount, target, direction, balance }) {
  *
  * @returns {object} result
  */
-function resolveDiceBet({ serverSeed, clientSeed, nonce, betAmount, target, direction }) {
+function resolveDiceBet({ serverSeed, clientSeed, nonce, betAmount, target, direction, currency }) {
   const roll = rollDice(serverSeed, clientSeed, nonce);
   const winProbability = calcWinProbability(target, direction);
   const multiplier = calcMultiplier(winProbability);
@@ -93,8 +90,8 @@ function resolveDiceBet({ serverSeed, clientSeed, nonce, betAmount, target, dire
   const won =
     direction === "under" ? roll < target : roll > target;
 
-  const payout = won ? parseFloat((betAmount * multiplier).toFixed(8)) : 0;
-  const profit = parseFloat((payout - betAmount).toFixed(8));
+  const payout = won ? roundAmount(betAmount * multiplier, currency) : 0;
+  const profit = roundAmount(payout - betAmount, currency);
 
   return {
     roll,            // the rolled number (0.00–99.99)
@@ -119,7 +116,7 @@ function getDiceGameInfo() {
     minTarget: MIN_TARGET,
     maxTarget: MAX_TARGET,
     maxMultiplier: MAX_MULTIPLIER,
-    minBet: MIN_BET_USDT,
+    minBet: 0.001,
     directions: ["under", "over"],
     // Example presets shown in the UI
     presets: [

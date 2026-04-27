@@ -13,6 +13,7 @@ const { hashServerSeed } = require("../engine/rng");
 const { generateMinePositions, calculateMultiplier, getNextMultiplier, validateMinesBet } = require("../games/mines");
 const auth = require("../middleware/auth");
 const { validateMaxBet } = require("../engine/maxBet");
+const { roundAmount } = require("../engine/amount");
 
 const games = new Map();
 const GAME_TTL = 10 * 60 * 1000;
@@ -52,7 +53,7 @@ router.post("/start", auth, async (req, res) => {
     const wallet = walletRes.rows[0];
     const balance = parseFloat(wallet.balance);
 
-    const validation = validateMinesBet({ betAmount: amount, mineCount: mines, balance });
+    const validation = validateMinesBet({ betAmount: amount, mineCount: mines, balance, currency });
     if (!validation.valid) throw new Error(validation.error);
 
     await client.query(`UPDATE wallets SET balance = balance - $1 WHERE id = $2`, [amount, wallet.id]);
@@ -144,8 +145,8 @@ router.post("/reveal", auth, async (req, res) => {
   if (safeTilesLeft === 0) {
     session.finished = true;
     games.delete(gameId);
-    const payout = parseFloat((session.betAmount * currentMultiplier).toFixed(8));
-    const profit = parseFloat((payout - session.betAmount).toFixed(8));
+    const payout = roundAmount(session.betAmount * currentMultiplier, session.currency);
+    const profit = roundAmount(payout - session.betAmount, session.currency);
 
     const client = await req.db.connect();
     try {
@@ -177,7 +178,7 @@ router.post("/reveal", auth, async (req, res) => {
     gameId, tileIndex: tile, isMine: false,
     revealed: session.revealed,
     currentMultiplier,
-    currentPayout: parseFloat((session.betAmount * currentMultiplier).toFixed(8)),
+    currentPayout: roundAmount(session.betAmount * currentMultiplier, session.currency),
     nextMultiplier: getNextMultiplier(session.mineCount, session.revealed.length),
     gameOver: false,
   });
@@ -199,8 +200,8 @@ router.post("/cashout", auth, async (req, res) => {
   games.delete(gameId);
 
   const multiplier = calculateMultiplier(session.mineCount, session.revealed.length);
-  const payout = parseFloat((session.betAmount * multiplier).toFixed(8));
-  const profit = parseFloat((payout - session.betAmount).toFixed(8));
+  const payout = roundAmount(session.betAmount * multiplier, session.currency);
+  const profit = roundAmount(payout - session.betAmount, session.currency);
 
   const client = await req.db.connect();
   try {

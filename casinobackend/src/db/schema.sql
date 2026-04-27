@@ -32,7 +32,7 @@ CREATE TABLE wallets (
   currency      VARCHAR(20) NOT NULL,  -- USDT_POLYGON | ETH_POLYGON | USDT_TRON | BTC
 
   -- Internal balance (off-chain)
-  balance       NUMERIC(28, 8) NOT NULL DEFAULT 0 CHECK (balance >= 0),
+  balance       NUMERIC(28, 10) NOT NULL DEFAULT 0 CHECK (balance >= 0),
 
   -- Provably fair seeds
   server_seed   TEXT NOT NULL,         -- secret, never exposed during play
@@ -58,7 +58,7 @@ CREATE TABLE deposits (
   id            SERIAL PRIMARY KEY,
   user_id       INTEGER NOT NULL REFERENCES users(id),
   currency      VARCHAR(20) NOT NULL,
-  amount        NUMERIC(28, 8) NOT NULL,
+  amount        NUMERIC(28, 10) NOT NULL,
   tx_hash       TEXT UNIQUE NOT NULL,   -- blockchain tx hash
   from_address  TEXT NOT NULL,
   to_address    TEXT NOT NULL,
@@ -79,8 +79,8 @@ CREATE TABLE withdrawals (
   id              SERIAL PRIMARY KEY,
   user_id         INTEGER NOT NULL REFERENCES users(id),
   currency        VARCHAR(20) NOT NULL,
-  amount          NUMERIC(28, 8) NOT NULL,
-  fee             NUMERIC(28, 8) NOT NULL DEFAULT 0,
+  amount          NUMERIC(28, 10) NOT NULL,
+  fee             NUMERIC(28, 10) NOT NULL DEFAULT 0,
   to_address      TEXT NOT NULL,
   tx_hash         TEXT UNIQUE,          -- filled when sent
   status          VARCHAR(16) NOT NULL DEFAULT 'pending', -- pending | processing | sent | failed
@@ -102,9 +102,9 @@ CREATE TABLE bets (
   game             VARCHAR(32) NOT NULL,  -- dice | crash | slots | roulette
 
   -- Amounts
-  bet_amount       NUMERIC(28, 8) NOT NULL,
-  payout           NUMERIC(28, 8) NOT NULL,
-  profit           NUMERIC(28, 8) NOT NULL,  -- can be negative
+  bet_amount       NUMERIC(28, 10) NOT NULL,
+  payout           NUMERIC(28, 10) NOT NULL,
+  profit           NUMERIC(28, 10) NOT NULL,  -- can be negative
   won              BOOLEAN NOT NULL,
 
   -- Dice-specific columns (nullable for other games)

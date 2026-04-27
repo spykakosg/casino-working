@@ -252,7 +252,7 @@ export default function SlotsPage() {
                       <p className={`text-2xl font-black ${winAnim ? "text-gold animate-pulse" : "text-green-400"}`}>
                         WIN! {result.multiplier}x
                       </p>
-                      <p className="text-green-400 font-mono text-sm">+{result.profit.toFixed(5)}</p>
+                      <p className="text-green-400 font-mono text-sm">+{result.profit.toFixed(BC.displayDecimals(currency))}</p>
                       {result.matchCount && (
                         <p className="text-xs text-casino-muted mt-1">{result.matchCount}-of-a-kind!</p>
                       )}
@@ -276,7 +276,7 @@ export default function SlotsPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <span className="text-xs text-casino-muted font-mono uppercase tracking-widest">Bet Amount</span>
-                <input type="number" min={BC.minBet(currency)} step={BC.stepSize(currency)} value={betAmount} onChange={e => setBetAmount(e.target.value)}
+                <input type="number" min={BC.inputMin(currency)} step={BC.stepSize(currency)} value={betAmount} onChange={e => setBetAmount(e.target.value)}
                   className="w-full bg-casino-surface border border-casino-border rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-gold/50" />
                 <div className="flex gap-1">
                   <button onClick={halfBet} className="flex-1 bg-casino-surface border border-casino-border rounded px-2 py-1 text-xs text-casino-muted hover:text-white transition-colors">1/2</button>

@@ -21,10 +21,10 @@ CREATE TABLE IF NOT EXISTS crash_bets (
   round_id     INTEGER NOT NULL REFERENCES crash_rounds(id),
   user_id      INTEGER NOT NULL REFERENCES users(id),
   currency     VARCHAR(20) NOT NULL,
-  bet_amount   NUMERIC(28, 8) NOT NULL,
+  bet_amount   NUMERIC(28, 10) NOT NULL,
   auto_cashout NUMERIC(10, 2),         -- null = manual cashout
   cashout_at   NUMERIC(10, 2),         -- multiplier when cashed out
-  payout       NUMERIC(28, 8) NOT NULL DEFAULT 0,
+  payout       NUMERIC(28, 10) NOT NULL DEFAULT 0,
   won          BOOLEAN NOT NULL DEFAULT false,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

@@ -227,7 +227,7 @@ export default function MinesPage() {
             {phase === "result" && profit !== null && (
               <div className="text-center mt-3">
                 <p className={`text-lg font-bold ${profit >= 0 ? "text-green-400" : "text-red-400"}`}>
-                  {profit >= 0 ? `+${profit.toFixed(5)}` : profit.toFixed(5)}
+                  {profit >= 0 ? `+${profit.toFixed(BC.displayDecimals(currency))}` : profit.toFixed(BC.displayDecimals(currency))}
                 </p>
                 {profit >= 0 && <p className="text-gold text-sm">{currentMultiplier}x</p>}
               </div>
@@ -247,7 +247,7 @@ export default function MinesPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <span className="text-xs text-casino-muted font-mono uppercase tracking-widest">Bet Amount</span>
-                    <input type="number" min={BC.minBet(currency)} step={BC.stepSize(currency)} value={betAmount} onChange={e => setBetAmount(e.target.value)}
+                    <input type="number" min={BC.inputMin(currency)} step={BC.stepSize(currency)} value={betAmount} onChange={e => setBetAmount(e.target.value)}
                       className="w-full bg-casino-surface border border-casino-border rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-gold/50" />
                     <div className="flex gap-1">
                       <button onClick={halfBet} className="flex-1 bg-casino-surface border border-casino-border rounded px-2 py-1 text-xs text-casino-muted hover:text-white transition-colors">1/2</button>

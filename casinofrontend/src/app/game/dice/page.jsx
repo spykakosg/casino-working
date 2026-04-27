@@ -31,7 +31,7 @@ export default function DicePage() {
   const winProbability = direction === "under" ? target : 100 - target;
   const multiplier     = winProbability > 0 ? ((99 / winProbability)).toFixed(4) : "0";
   const profitVal      = (parseFloat(betAmount) || 0) * (parseFloat(multiplier) - 1);
-  const profit         = profitVal.toFixed(5);
+  const profit         = profitVal.toFixed(BC.displayDecimals(currency));
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -182,7 +182,7 @@ export default function DicePage() {
                 <div className="flex gap-1">
                   <input
                     type="number"
-                    min={BC.minBet(currency)}
+                    min={BC.inputMin(currency)}
                     step={BC.stepSize(currency)}
                     value={betAmount}
                     onChange={e => setBetAmount(e.target.value)}
@@ -267,6 +267,7 @@ function RollingAnimation() {
 function ResultDisplay({ result }) {
   const { bet } = result;
   const won = bet.won;
+  const dec = BC.displayDecimals(bet.currency);
   return (
     <div className="text-center animate-roll-in w-full">
       {/* Roll number */}
@@ -281,7 +282,7 @@ function ResultDisplay({ result }) {
       }`}>
         {won ? "✓ WIN" : "✗ LOSS"}
         <span className="opacity-70">
-          {won ? `+${bet.payout.toFixed(5)}` : `-${bet.betAmount.toFixed(5)}`}
+          {won ? `+${bet.payout.toFixed(dec)}` : `-${bet.betAmount.toFixed(dec)}`}
         </span>
       </div>
 
