@@ -16,6 +16,7 @@
  */
 
 const { generateFloat } = require("../engine/rng");
+const { validateMinimumBet } = require("../engine/currency");
 
 const SYMBOLS = [
   { name: "seven",  emoji: "7",   weight: 2,  pay5: 100, pay4: 25, pay3: 10 },
@@ -111,8 +112,10 @@ function resolveSlotsBet({ serverSeed, clientSeed, nonce, betAmount }) {
   };
 }
 
-function validateSlotsBet({ betAmount, balance }) {
+function validateSlotsBet({ betAmount, balance, currency }) {
   if (betAmount <= 0) return { valid: false, error: "Bet amount must be positive" };
+  const minCheck = validateMinimumBet(currency, betAmount);
+  if (!minCheck.valid) return minCheck;
   if (betAmount > balance) return { valid: false, error: "Insufficient balance" };
   return { valid: true };
 }

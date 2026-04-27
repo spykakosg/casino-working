@@ -15,6 +15,7 @@
  */
 
 const { generateFloat } = require("../engine/rng");
+const { validateMinimumBet } = require("../engine/currency");
 
 const RED_NUMBERS   = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36];
 const BLACK_NUMBERS = [2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35];
@@ -109,8 +110,10 @@ function resolveRouletteBet({ serverSeed, clientSeed, nonce, betAmount, betType,
   };
 }
 
-function validateRouletteBet({ betAmount, betType, betValue, balance }) {
+function validateRouletteBet({ betAmount, betType, betValue, balance, currency }) {
   if (betAmount <= 0) return { valid: false, error: "Bet amount must be positive" };
+  const minCheck = validateMinimumBet(currency, betAmount);
+  if (!minCheck.valid) return minCheck;
   if (betAmount > balance) return { valid: false, error: "Insufficient balance" };
   if (!BET_TYPES[betType]) return { valid: false, error: "Invalid bet type" };
   if (betType === "straight") {

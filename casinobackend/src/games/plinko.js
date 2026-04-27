@@ -13,6 +13,7 @@
  */
 
 const { generateFloat } = require("../engine/rng");
+const { validateMinimumBet } = require("../engine/currency");
 
 const MULTIPLIERS = {
   8: {
@@ -69,8 +70,10 @@ function resolvePlinkoBet({ serverSeed, clientSeed, nonce, betAmount, rows, risk
   };
 }
 
-function validatePlinkoBet({ betAmount, rows, risk, balance }) {
+function validatePlinkoBet({ betAmount, rows, risk, balance, currency }) {
   if (betAmount <= 0) return { valid: false, error: "Bet amount must be positive" };
+  const minCheck = validateMinimumBet(currency, betAmount);
+  if (!minCheck.valid) return minCheck;
   if (betAmount > balance) return { valid: false, error: "Insufficient balance" };
   if (!VALID_ROWS.includes(rows)) return { valid: false, error: "Rows must be 8, 12, or 16" };
   if (!VALID_RISKS.includes(risk)) return { valid: false, error: "Risk must be low, medium, or high" };
