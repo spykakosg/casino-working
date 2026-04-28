@@ -7,13 +7,13 @@ import BetHistory from "@/components/BetHistory";
 import { minesStart, minesReveal, minesCashout, getBalances, getMinesBetHistory } from "@/lib/api";
 import * as BC from "@/lib/betConfig";
 
-const CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+const CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
 
 export default function MinesPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  const [currency, setCurrency]     = useState("USDT_POLYGON");
+  const [currency, setCurrency]     = useState("USDT");
   const [betAmount, setBetAmount]   = useState("1");
   const [mineCount, setMineCount]   = useState(5);
   const [error, setError]           = useState("");

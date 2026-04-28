@@ -7,7 +7,6 @@
  * Supported:
  *  - USDT on Polygon (ERC-20 via Alchemy)
  *  - ETH on Polygon (native via Alchemy)
- *  - USDT on Tron (TRC-20 via TronGrid)
  *  - BTC (via polling a block explorer API)
  *
  * Run this as a separate process: node src/services/depositWatcher.js
@@ -18,14 +17,13 @@ const { ethers } = require("ethers");
 const pool = require("../db/pool");
 
 const CONFIRMATIONS_REQUIRED = {
-  USDT_POLYGON: 2,
+  USDT: 2,
   ETH_POLYGON: 2,
-  USDT_TRON: 20,
   BTC: 3,
 };
 
 // USDT contract address on Polygon mainnet
-const USDT_POLYGON_CONTRACT = "0xc2132D05D31c914a87C6611C10748AEb04B58e8F";
+const USDT_CONTRACT = "0xc2132D05D31c914a87C6611C10748AEb04B58e8F";
 // ERC-20 Transfer event ABI (minimal)
 const ERC20_ABI = [
   "event Transfer(address indexed from, address indexed to, uint256 value)",
@@ -40,7 +38,7 @@ async function watchPolygon() {
   }
 
   const provider = new ethers.JsonRpcProvider(process.env.ALCHEMY_POLYGON_URL);
-  const usdtContract = new ethers.Contract(USDT_POLYGON_CONTRACT, ERC20_ABI, provider);
+  const usdtContract = new ethers.Contract(USDT_CONTRACT, ERC20_ABI, provider);
 
   console.log("👁  Watching Polygon (ETH + USDT)...");
 
@@ -49,7 +47,7 @@ async function watchPolygon() {
     try {
       const address = to.toLowerCase();
       const userRes = await pool.query(
-        "SELECT user_id FROM wallets WHERE LOWER(deposit_address) = $1 AND currency = 'USDT_POLYGON'",
+        "SELECT user_id FROM wallets WHERE LOWER(deposit_address) = $1 AND currency = 'USDT'",
         [address]
       );
       if (userRes.rows.length === 0) return;
@@ -57,8 +55,8 @@ async function watchPolygon() {
       const userId = userRes.rows[0].user_id;
       const amount = parseFloat(ethers.formatUnits(value, 6)); // USDT has 6 decimals
 
-      console.log(`💰 USDT_POLYGON deposit detected: ${amount} USDT → user ${userId}`);
-      await creditDeposit(userId, "USDT_POLYGON", amount, null, from, to);
+      console.log(`💰 USDT deposit detected: ${amount} USDT → user ${userId}`);
+      await creditDeposit(userId, "USDT", amount, null, from, to);
     } catch (err) {
       console.error("USDT transfer handler error:", err);
     }
@@ -90,48 +88,6 @@ async function watchPolygon() {
       console.error("ETH block watcher error:", err);
     }
   });
-}
-
-// ─── Tron USDT (TRC-20) ───────────────────────────────────────────────────────
-async function watchTron() {
-  if (!process.env.TRONGRID_API_KEY) {
-    console.warn("⚠️  TRONGRID_API_KEY not set — Tron watcher disabled");
-    return;
-  }
-
-  // USDT TRC-20 contract on Tron mainnet
-  const USDT_TRON_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
-
-  console.log("👁  Watching Tron (USDT TRC-20) — polling every 30s...");
-
-  async function poll() {
-    try {
-      // Get all monitored Tron addresses
-      const walletsRes = await pool.query(
-        "SELECT user_id, deposit_address FROM wallets WHERE currency = 'USDT_TRON' AND deposit_address IS NOT NULL"
-      );
-
-      for (const wallet of walletsRes.rows) {
-        const url = `https://api.trongrid.io/v1/accounts/${wallet.deposit_address}/transactions/trc20?contract_address=${USDT_TRON_CONTRACT}&limit=10`;
-        const resp = await fetch(url, {
-          headers: { "TRON-PRO-API-KEY": process.env.TRONGRID_API_KEY },
-        });
-        const data = await resp.json();
-        if (!data.data) continue;
-
-        for (const tx of data.data) {
-          if (tx.to !== wallet.deposit_address) continue;
-          const amount = parseFloat(tx.value) / 1_000_000; // USDT TRC-20 has 6 decimals
-          await creditDeposit(wallet.user_id, "USDT_TRON", amount, tx.transaction_id, tx.from, tx.to);
-        }
-      }
-    } catch (err) {
-      console.error("Tron watcher error:", err);
-    }
-    setTimeout(poll, 30_000);
-  }
-
-  poll();
 }
 
 // ─── Bitcoin ──────────────────────────────────────────────────────────────────
@@ -215,7 +171,6 @@ async function start() {
   console.log("🔍 Starting deposit watcher service...");
   await Promise.all([
     watchPolygon(),
-    watchTron(),
     watchBitcoin(),
   ]);
 }

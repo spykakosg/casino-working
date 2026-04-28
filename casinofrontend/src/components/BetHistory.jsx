@@ -42,25 +42,34 @@ function BetRow({ bet }) {
   const payout = parseFloat(bet.payout || 0);
   const profit = bet.profit !== undefined && bet.profit !== null ? parseFloat(bet.profit) : payout - amount;
   const roll = typeof bet.roll === "number" ? bet.roll : parseFloat(bet.roll);
+  const game = bet.game || "";
   const isPush = Math.abs(profit) < 0.0001;
   const isWin = profit > 0.0001;
   const ccy = bet.currency || "";
   const isCrypto = ccy === "BTC" || ccy === "ETH_POLYGON";
-  const dec = isCrypto ? 10 : 5;
-  function fmt(v) { return v.toFixed(dec); }
+  function fmt(v) {
+    if (!Number.isFinite(v)) return "0";
+    const abs = Math.abs(v);
+    const dec = isCrypto || (abs > 0 && abs < 1) ? 8 : 5;
+    return v.toFixed(dec).replace(/\.?0+$/, "");
+  }
   return (
     <div className={`px-4 py-3 flex items-center gap-3 hover:bg-casino-surface/50 transition-colors ${
       isWin ? "border-l-2 border-green-500/40" : isPush ? "border-l-2 border-yellow-500/30" : "border-l-2 border-red-500/20"
     }`}>
-      {/* Roll */}
+      {/* Main value */}
       <div className={`font-mono font-bold text-sm w-12 shrink-0 ${isWin ? "text-green-400" : isPush ? "text-yellow-400" : "text-red-400"}`}>
-        {!isNaN(roll) ? roll.toFixed(2) : "—"}
+        {game === "plinko"
+          ? `${parseFloat(bet.multiplier || 0).toFixed(2)}×`
+          : (!isNaN(roll) ? roll.toFixed(2) : "—")}
       </div>
 
       {/* Details */}
       <div className="flex-1 min-w-0">
         <div className="text-xs text-casino-muted font-mono truncate">
-          {bet.direction} {bet.target} · {bet.multiplier}×
+          {game === "plinko"
+            ? `plinko · bucket ${bet.bucket ?? "?"}`
+            : `${bet.direction} ${bet.target} · ${bet.multiplier}×`}
         </div>
         <div className="text-xs text-casino-muted/60 font-mono">
           {fmt(amount)} → {fmt(payout)}

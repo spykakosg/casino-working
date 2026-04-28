@@ -16,8 +16,16 @@ const jwt = require("jsonwebtoken");
 const { generateServerSeed, hashServerSeed, generateClientSeed } = require("../engine/rng");
 const auth = require("../middleware/auth");
 
-const SUPPORTED_CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+const SUPPORTED_CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
 const SALT_ROUNDS = 12;
+
+function normalizeCurrency(currency) {
+  return ["USDT", "USDT_POLYGON", "USDT_TRON"].includes(currency) ? "USDT" : currency;
+}
+
+function getCurrencyCandidates(currency) {
+  return currency === "USDT" ? ["USDT", "USDT_POLYGON", "USDT_TRON"] : [currency];
+}
 
 function signToken(user) {
   return jwt.sign(
@@ -166,7 +174,8 @@ router.get("/me", auth, async (req, res) => {
 
     const balances = {};
     for (const w of walletsRes.rows) {
-      balances[w.currency] = parseFloat(w.balance);
+      const normalized = normalizeCurrency(w.currency);
+      balances[normalized] = (balances[normalized] || 0) + parseFloat(w.balance);
     }
 
     const user = userRes.rows[0];
@@ -224,7 +233,9 @@ router.get("/seeds", auth, async (req, res) => {
 
     const seeds = {};
     for (const row of res2.rows) {
-      seeds[row.currency] = {
+      const normalized = normalizeCurrency(row.currency);
+      if (seeds[normalized]) continue;
+      seeds[normalized] = {
         serverSeedHash: hashServerSeed(row.server_seed), // never expose raw seed
         clientSeed: row.client_seed,
         nonce: row.nonce,
@@ -250,8 +261,23 @@ router.put("/client-seed", auth, async (req, res) => {
 
   try {
     const result = await req.db.query(
-      "UPDATE wallets SET client_seed = $1 WHERE user_id = $2 AND currency = $3 RETURNING nonce",
-      [clientSeed, req.user.id, currency]
+      `UPDATE wallets
+       SET client_seed = $1
+       WHERE id = (
+         SELECT id
+         FROM wallets
+         WHERE user_id = $2
+           AND currency = ANY($3::text[])
+         ORDER BY CASE
+           WHEN currency = 'USDT' THEN 0
+           WHEN currency = 'USDT_POLYGON' THEN 1
+           WHEN currency = 'USDT_TRON' THEN 2
+           ELSE 3
+         END
+         LIMIT 1
+       )
+       RETURNING nonce`,
+      [clientSeed, req.user.id, getCurrencyCandidates(currency)]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Wallet not found" });

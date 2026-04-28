@@ -32,7 +32,7 @@ router.post("/start", auth, async (req, res) => {
     return res.status(400).json({ error: "currency, betAmount, mineCount required" });
   }
 
-  const validCurrencies = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+  const validCurrencies = ["USDT", "ETH_POLYGON", "BTC"];
   if (!validCurrencies.includes(currency)) return res.status(400).json({ error: "Invalid currency" });
 
   const amount = parseFloat(betAmount);

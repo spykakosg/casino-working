@@ -6,7 +6,6 @@
  *
  * Derivation paths:
  *   Polygon/ETH: m/44'/60'/0'/0/{index}
- *   Tron:        m/44'/195'/0'/0/{index}
  *   Bitcoin:     m/44'/0'/0'/0/{index}
  *
  * IMPORTANT: Back up your WALLET_MNEMONIC securely.
@@ -39,20 +38,6 @@ function deriveEVMAddress(index) {
 }
 
 /**
- * Derive a Tron address at a given index
- * Tron uses the same secp256k1 keys as Ethereum but with base58check encoding
- * For simplicity we derive the EVM key and convert
- */
-function deriveTronAddress(index) {
-  const path = `m/44'/195'/0'/0/${index}`;
-  const hdNode = ethers.HDNodeWallet.fromPhrase(process.env.WALLET_MNEMONIC, undefined, path);
-  // Convert ETH address to Tron format (replace 0x prefix with 41, then base58check encode)
-  // For production use tronweb: TronWeb.address.fromHex("41" + hdNode.address.slice(2))
-  // Here we return the raw hex address — integrate TronWeb for full Tron support
-  return `T${hdNode.address.slice(3)}`; // simplified placeholder — use tronweb in production
-}
-
-/**
  * Assign deposit addresses to a single user
  */
 async function generateAddressForUser(userId) {
@@ -66,8 +51,7 @@ async function generateAddressForUser(userId) {
 
     const currencies = [
       { currency: "ETH_POLYGON", address: deriveEVMAddress(index) },
-      { currency: "USDT_POLYGON", address: deriveEVMAddress(index) }, // same address, different token
-      { currency: "USDT_TRON", address: deriveTronAddress(index) },
+      { currency: "USDT", address: deriveEVMAddress(index) }, // same address, different token
       { currency: "BTC", address: `bc1q_placeholder_${index}` }, // integrate bitcoinjs-lib for real BTC
     ];
 

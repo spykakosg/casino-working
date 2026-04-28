@@ -7,12 +7,11 @@ import { useAuth } from "@/context/AuthContext";
 import { getBalances, placeSlotsBet } from "@/lib/api";
 import * as BC from "@/lib/betConfig";
 
-const CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+const CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
 const CURRENCY_LABEL = {
-  USDT_POLYGON: "USDT POLYGON",
+  USDT: "USDT POLYGON",
   ETH_POLYGON: "ETH POLYGON",
-  USDT_TRON: "USDT TRON",
-  BTC: "BTC",
+    BTC: "BTC",
 };
 const reelCount = 5;
 const rowCount = 3;
@@ -141,7 +140,7 @@ export default function SlotsPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
-  const [currency, setCurrency] = useState("USDT_POLYGON");
+  const [currency, setCurrency] = useState("USDT");
   const [bet, setBet] = useState(100);
   const [balanceMap, setBalanceMap] = useState({});
 

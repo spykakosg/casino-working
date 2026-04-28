@@ -7,6 +7,7 @@
  * GET  /api/admin/users               - List users
  * GET  /api/admin/users/:id           - Single user detail
  * PUT  /api/admin/users/:id/ban       - Ban/unban user
+ * DELETE /api/admin/users/:id          - Delete user
  * PUT  /api/admin/users/:id/credit    - Credit funds to user wallet
  * GET  /api/admin/withdrawals/pending - Pending withdrawals
  * PUT  /api/admin/withdrawals/:id     - Approve or reject withdrawal
@@ -117,9 +118,19 @@ router.get("/users/:id", async (req, res) => {
 
     if (userRes.rows.length === 0) return res.status(404).json({ error: "User not found" });
 
+    const normalizedWallets = {};
+    for (const row of walletsRes.rows) {
+      const normalizedCurrency = ["USDT", "USDT_POLYGON", "USDT_TRON"].includes(row.currency)
+        ? "USDT"
+        : row.currency;
+      if (!normalizedWallets[normalizedCurrency]) normalizedWallets[normalizedCurrency] = 0;
+      normalizedWallets[normalizedCurrency] += parseFloat(row.balance || 0);
+    }
+    const wallets = Object.entries(normalizedWallets).map(([currency, balance]) => ({ currency, balance }));
+
     return res.json({
       user: userRes.rows[0],
-      wallets: walletsRes.rows,
+      wallets,
       stats: betsRes.rows[0],
     });
   } catch (err) {
@@ -141,10 +152,49 @@ router.put("/users/:id/ban", async (req, res) => {
   }
 });
 
+// ─── Delete User ──────────────────────────────────────────────────────────────
+router.delete("/users/:id", async (req, res) => {
+  const client = await req.db.connect();
+  try {
+    await client.query("BEGIN");
+
+    const userRes = await client.query(
+      "SELECT id, username, role FROM users WHERE id = $1 FOR UPDATE",
+      [req.params.id]
+    );
+    if (userRes.rows.length === 0 || userRes.rows[0].role === "admin") {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "User not found or cannot delete admin user" });
+    }
+
+    const crashTableRes = await client.query("SELECT to_regclass('public.crash_bets') AS t");
+    if (crashTableRes.rows[0].t) {
+      await client.query("DELETE FROM crash_bets WHERE user_id = $1", [req.params.id]);
+    }
+    await client.query("DELETE FROM bets WHERE user_id = $1", [req.params.id]);
+    await client.query("DELETE FROM deposits WHERE user_id = $1", [req.params.id]);
+    await client.query("DELETE FROM withdrawals WHERE user_id = $1", [req.params.id]);
+    await client.query("DELETE FROM sessions WHERE user_id = $1", [req.params.id]);
+    await client.query("DELETE FROM wallets WHERE user_id = $1", [req.params.id]);
+    await client.query("DELETE FROM users WHERE id = $1", [req.params.id]);
+
+    await client.query("COMMIT");
+    return res.json({ success: true, deleted: { id: userRes.rows[0].id, username: userRes.rows[0].username } });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    return res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 // ─── Credit Funds to User ─────────────────────────────────────────────────────
 router.put("/users/:id/credit", async (req, res) => {
   const { currency, amount } = req.body;
-  const VALID_CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+  const VALID_CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
+  const currencyCandidates = currency === "USDT"
+    ? ["USDT", "USDT_POLYGON", "USDT_TRON"]
+    : [currency];
 
   if (!currency || !VALID_CURRENCIES.includes(currency)) {
     return res.status(400).json({ error: `currency must be one of: ${VALID_CURRENCIES.join(", ")}` });
@@ -156,8 +206,23 @@ router.put("/users/:id/credit", async (req, res) => {
 
   try {
     const walletRes = await req.db.query(
-      "UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE user_id = $2 AND currency = $3 RETURNING balance",
-      [creditAmount, req.params.id, currency]
+      `UPDATE wallets
+       SET balance = balance + $1, updated_at = NOW()
+       WHERE id = (
+         SELECT id
+         FROM wallets
+         WHERE user_id = $2
+           AND currency = ANY($3::text[])
+         ORDER BY CASE
+           WHEN currency = 'USDT' THEN 0
+           WHEN currency = 'USDT_POLYGON' THEN 1
+           WHEN currency = 'USDT_TRON' THEN 2
+           ELSE 3
+         END
+         LIMIT 1
+       )
+       RETURNING balance, currency`,
+      [creditAmount, req.params.id, currencyCandidates]
     );
 
     if (walletRes.rows.length === 0) {
@@ -167,7 +232,7 @@ router.put("/users/:id/credit", async (req, res) => {
     return res.json({
       success: true,
       userId: parseInt(req.params.id),
-      currency,
+      currency: walletRes.rows[0].currency,
       credited: creditAmount,
       newBalance: parseFloat(walletRes.rows[0].balance),
     });

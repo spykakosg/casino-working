@@ -8,8 +8,8 @@ import { useCrash } from "@/hooks/useCrash";
 import { getBalances, getCrashBetHistory } from "@/lib/api";
 import * as BC from "@/lib/betConfig";
 
-const CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
-const CCY_SHORT  = { USDT_POLYGON: "USDT", ETH_POLYGON: "ETH", USDT_TRON: "USDT₮", BTC: "BTC" };
+const CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
+const CCY_SHORT  = { USDT: "USDT", ETH_POLYGON: "ETH", BTC: "BTC" };
 const fmtAmount = (value, currency) => parseFloat(value || 0).toFixed(BC.displayDecimals(currency));
 
 export default function CrashPage() {
@@ -24,7 +24,7 @@ export default function CrashPage() {
     error, connected, placeBet, cashOut,
   } = useCrash(token);
 
-  const [currency, setCurrency]           = useState("USDT_POLYGON");
+  const [currency, setCurrency]           = useState("USDT");
   const [betAmount, setBetAmount]         = useState("1");
   const [autoCashout, setAutoCashout]     = useState("2.00");
   const [autoCashoutOn, setAutoCashoutOn] = useState(false);

@@ -5,12 +5,12 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import {
   adminGetStats, adminGetUsers, adminGetUser,
-  adminBanUser, adminCreditUser, adminResetPnl,
+  adminBanUser, adminCreditUser, adminDeleteUser, adminResetPnl,
   adminGetPendingWithdrawals, adminProcessWithdrawal,
 } from "@/lib/api";
 
-const CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
-const CURRENCY_LABELS = { USDT_POLYGON: "USDT (Polygon)", ETH_POLYGON: "ETH (Polygon)", USDT_TRON: "USDT (Tron)", BTC: "BTC" };
+const CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
+const CURRENCY_LABELS = { USDT: "USDT (Polygon)", ETH_POLYGON: "ETH (Polygon)", BTC: "BTC" };
 
 export default function AdminPage() {
   const { user, loading: authLoading } = useAuth();
@@ -319,11 +319,12 @@ function UsersPanel() {
 // ─── User Detail Panel ────────────────────────────────────────────────────────
 function UserDetailPanel({ data, onClose, onRefresh, onUsersRefresh }) {
   const { user, wallets, stats } = data;
-  const [creditCurrency, setCreditCurrency] = useState("USDT_POLYGON");
+  const [creditCurrency, setCreditCurrency] = useState("USDT");
   const [creditAmount, setCreditAmount] = useState("");
   const [creditLoading, setCreditLoading] = useState(false);
   const [creditMsg, setCreditMsg] = useState("");
   const [banLoading, setBanLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   async function handleCredit(e) {
     e.preventDefault();
@@ -351,6 +352,20 @@ function UserDetailPanel({ data, onClose, onRefresh, onUsersRefresh }) {
       setCreditMsg(`Error: ${err.message}`);
     } finally {
       setBanLoading(false);
+    }
+  }
+
+  async function handleDeleteUser() {
+    if (!confirm(`Delete user "${user.username}" permanently? This cannot be undone.`)) return;
+    setDeleteLoading(true);
+    try {
+      await adminDeleteUser(user.id);
+      onUsersRefresh();
+      onClose();
+    } catch (err) {
+      setCreditMsg(`Error: ${err.message}`);
+    } finally {
+      setDeleteLoading(false);
     }
   }
 
@@ -454,6 +469,14 @@ function UserDetailPanel({ data, onClose, onRefresh, onUsersRefresh }) {
           }`}
         >
           {banLoading ? "..." : user.is_banned ? "Unban User" : "Ban User"}
+        </button>
+        <button
+          onClick={handleDeleteUser}
+          disabled={deleteLoading || user.role === "admin"}
+          className="px-4 py-2 rounded-lg text-sm font-mono font-semibold transition-all bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 disabled:opacity-50"
+          title={user.role === "admin" ? "Admin users cannot be deleted" : "Delete user"}
+        >
+          {deleteLoading ? "Deleting..." : "Delete User"}
         </button>
       </div>
     </div>

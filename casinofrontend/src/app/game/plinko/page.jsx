@@ -7,7 +7,7 @@ import BetHistory from "@/components/BetHistory";
 import { placePlinkoBet, getBalances, getPlinkoBetHistory } from "@/lib/api";
 import * as BC from "@/lib/betConfig";
 
-const CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+const CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
 
 const MULTIPLIERS = {
   8: {
@@ -214,7 +214,7 @@ export default function PlinkoPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  const [currency, setCurrency]   = useState("USDT_POLYGON");
+  const [currency, setCurrency]   = useState("USDT");
   const [betAmount, setBetAmount] = useState("1");
   const [rows, setRows]           = useState(12);
   const [risk, setRisk]           = useState("medium");
@@ -324,7 +324,7 @@ export default function PlinkoPage() {
                     {result.multiplier}x
                   </span>
                   <span className={`ml-2 text-sm font-mono ${result.profit >= 0 ? "text-green-400" : "text-red-400"}`}>
-                    {result.profit >= 0 ? "+" : ""}{result.profit.toFixed(5)}
+                    {result.profit >= 0 ? "+" : ""}{result.profit.toFixed(8)}
                   </span>
                 </div>
               )}
