@@ -1,348 +1,424 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/context/AuthContext";
 import Navbar from "@/components/Navbar";
 import BetHistory from "@/components/BetHistory";
-import { placeSlotsBet, getBalances, getSlotsBetHistory } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { getBalances, getSlotsBetHistory, placeSlotsBet } from "@/lib/api";
 import * as BC from "@/lib/betConfig";
 
 const CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+const RTP_TARGET = 0.95;
+const reelCount = 5;
+const rowCount = 3;
+const totalCells = reelCount * rowCount;
+const paylines = [
+  [0, 1, 2, 3, 4],
+  [5, 6, 7, 8, 9],
+  [10, 11, 12, 13, 14],
+  [0, 6, 12, 8, 4],
+  [10, 6, 2, 8, 14],
+];
 
-const SYMBOL_MAP = {
-  seven:  { emoji: "7\ufe0f\u20e3", label: "7" },
-  bar:    { emoji: "\ud83c\udfa8", label: "BAR" },
-  bell:   { emoji: "\ud83d\udd14", label: "BELL" },
-  cherry: { emoji: "\ud83c\udf52", label: "CHRY" },
-  lemon:  { emoji: "\ud83c\udf4b", label: "LMON" },
+const symbols = [
+  { key: "btc", weight: 7 },
+  { key: "eth", weight: 8 },
+  { key: "doge", weight: 10 },
+  { key: "sol", weight: 10 },
+  { key: "xrp", weight: 12 },
+  { key: "usdt", weight: 16 },
+  { key: "wild", weight: 3 },
+  { key: "scatter", weight: 2 },
+];
+
+const backendToCrypto = {
+  seven: "btc",
+  bar: "eth",
+  bell: "sol",
+  cherry: "xrp",
+  lemon: "usdt",
+  wild: "wild",
+  scatter: "scatter",
+  btc: "btc",
+  eth: "eth",
+  doge: "doge",
+  sol: "sol",
+  xrp: "xrp",
+  usdt: "usdt",
 };
 
-const SYMBOL_LIST = ["seven", "bar", "bell", "cherry", "lemon"];
-const REEL_SPIN_EMOJIS = ["7\ufe0f\u20e3", "\ud83c\udfa8", "\ud83d\udd14", "\ud83c\udf52", "\ud83c\udf4b"];
+const multipliers = [1, 1, 1, 1, 1, 1, 2, 2, 2, 4, 4, 8, 16, 32, 64, 128];
 
-function SlotCell({ symbol, spinning, won }) {
-  const [display, setDisplay] = useState(symbol);
-  const intervalRef = useRef(null);
+function money(v) {
+  const n = Number(v) || 0;
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
-  useEffect(() => {
-    if (spinning) {
-      intervalRef.current = setInterval(() => {
-        setDisplay(SYMBOL_LIST[Math.floor(Math.random() * SYMBOL_LIST.length)]);
-      }, 60);
-      return () => clearInterval(intervalRef.current);
-    } else {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      setDisplay(symbol);
+function weightedSymbol() {
+  const total = symbols.reduce((s, x) => s + x.weight, 0);
+  let r = Math.random() * total;
+  for (const s of symbols) {
+    r -= s.weight;
+    if (r <= 0) return { key: s.key };
+  }
+  return { key: symbols[0].key };
+}
+
+function makeGrid() {
+  return Array.from({ length: totalCells }, weightedSymbol);
+}
+
+function normalizeGrid(rawGrid) {
+  if (!rawGrid) return null;
+
+  if (Array.isArray(rawGrid) && rawGrid.length === totalCells && rawGrid[0]?.key) {
+    return rawGrid.map((s) => ({ key: backendToCrypto[s.key] || "usdt" }));
+  }
+
+  if (Array.isArray(rawGrid) && rawGrid.length === rowCount && Array.isArray(rawGrid[0])) {
+    const out = [];
+    for (let r = 0; r < rowCount; r++) {
+      for (let c = 0; c < reelCount; c++) {
+        const name = rawGrid[r]?.[c]?.name || rawGrid[r]?.[c]?.key;
+        out.push({ key: backendToCrypto[name] || "usdt" });
+      }
     }
-  }, [spinning, symbol]);
+    return out;
+  }
 
-  const info = SYMBOL_MAP[display] || SYMBOL_MAP.lemon;
+  return null;
+}
 
-  return (
-    <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-lg flex items-center justify-center text-2xl sm:text-3xl transition-all duration-300 ${
-      won ? "bg-gold/20 border-2 border-gold shadow-lg shadow-gold/30 scale-110" :
-      spinning ? "bg-casino-surface/80 border border-casino-border animate-pulse" :
-      "bg-casino-surface border border-casino-border"
-    }`}>
-      <span className={`${spinning ? "animate-bounce" : ""}`}>{info.emoji}</span>
-    </div>
-  );
+function symbolNode(key) {
+  if (key === "btc") return <div className="cf-symbol cf-coinSym">₿</div>;
+  if (key === "doge") return <div className="cf-symbol cf-coinSym"><span className="cf-dogeFace">D</span></div>;
+  if (key === "eth") return <div className="cf-symbol cf-ethSym"><div className="cf-ethIcon" /></div>;
+  if (key === "sol") return <div className="cf-symbol cf-solSym"><div className="cf-solBars"><span /><span /><span /></div></div>;
+  if (key === "xrp") return <div className="cf-symbol cf-xrpSym">X</div>;
+  if (key === "usdt") return <div className="cf-symbol cf-usdtSym">₮</div>;
+  if (key === "wild") return <div className="cf-symbol cf-special cf-wild">🚀<br />WILD</div>;
+  return <div className="cf-symbol cf-special cf-scatter">💎<br />SCATTER</div>;
+}
+
+function buildWinningCells(result) {
+  const winners = new Set();
+  if (!result?.won) return winners;
+
+  if (typeof result.winningLine === "number" && result.winningLine >= 0) {
+    const line = paylines[result.winningLine];
+    const count = Math.max(3, Math.min(5, Number(result.matchCount) || 3));
+    line?.slice(0, count).forEach((idx) => winners.add(idx));
+  }
+
+  return winners;
 }
 
 export default function SlotsPage() {
-  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
 
-  const [currency, setCurrency]   = useState("USDT_POLYGON");
-  const [betAmount, setBetAmount] = useState("1");
-  const [spinning, setSpinning]   = useState(false);
-  const [grid, setGrid]           = useState(null);
-  const [result, setResult]       = useState(null);
-  const [error, setError]         = useState("");
-  const [balances, setBalances]   = useState({});
-  const [history, setHistory]     = useState([]);
+  const [currency, setCurrency] = useState("USDT_POLYGON");
+  const [bet, setBet] = useState(100);
+  const [balanceMap, setBalanceMap] = useState({});
+  const [history, setHistory] = useState([]);
   const [historyPage, setHistoryPage] = useState(0);
-  const [showPaytable, setShowPaytable] = useState(false);
-  const [reelStates, setReelStates] = useState([false, false, false, false, false]);
-  const [winAnim, setWinAnim]     = useState(false);
+
+  const [grid, setGrid] = useState(() => [
+    { key: "eth" }, { key: "doge" }, { key: "btc" }, { key: "sol" }, { key: "doge" },
+    { key: "wild" }, { key: "usdt" }, { key: "xrp" }, { key: "scatter" }, { key: "wild" },
+    { key: "sol" }, { key: "doge" }, { key: "btc" }, { key: "eth" }, { key: "usdt" },
+  ]);
+  const [winners, setWinners] = useState(new Set());
+  const [spinning, setSpinning] = useState(false);
+  const [auto, setAuto] = useState(false);
+  const [lastWin, setLastWin] = useState(0);
+  const [totalWin, setTotalWin] = useState(0);
+  const [freeSpins, setFreeSpins] = useState(0);
+  const [mult, setMult] = useState(1);
+  const [toast, setToast] = useState("");
+  const [error, setError] = useState("");
+
+  const autoTimer = useRef(null);
+
+  const balance = Number(balanceMap[currency] || 0);
+  const jackpot = useMemo(() => 251459.7 + totalWin * 0.02, [totalWin]);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
-  }, [user, authLoading, router]);
+  }, [authLoading, user, router]);
 
-  useEffect(() => { if (user) fetchBalances(); }, [user]);
-  useEffect(() => { if (user) fetchHistory(); }, [user, historyPage]);
+  useEffect(() => {
+    BC.fetchPrices();
+  }, []);
+
+  useEffect(() => {
+    setBet(Number(BC.defaultBet(currency)) || 10);
+  }, [currency]);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchBalances();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchHistory();
+  }, [user, historyPage]);
+
+  useEffect(() => () => clearTimeout(autoTimer.current), []);
 
   async function fetchBalances() {
     try {
       const data = await getBalances();
       const map = {};
-      for (const [k, v] of Object.entries(data.balances)) map[k] = v.balance;
-      setBalances(map);
-    } catch {}
+      for (const [k, v] of Object.entries(data.balances || {})) map[k] = v.balance;
+      setBalanceMap(map);
+    } catch {
+      // ignore
+    }
   }
 
   async function fetchHistory() {
     try {
       const data = await getSlotsBetHistory(20, historyPage * 20);
-      setHistory(prev => historyPage === 0 ? data.bets : [...prev, ...data.bets]);
-    } catch {}
+      setHistory((prev) => (historyPage === 0 ? data.bets : [...prev, ...data.bets]));
+    } catch {
+      // ignore
+    }
   }
 
-  async function handleSpin() {
+  function showToast(text) {
+    setToast(text);
+    setTimeout(() => setToast(""), 1200);
+  }
+
+  async function spin() {
+    if (spinning) return;
+    if (balance < bet && freeSpins <= 0) {
+      showToast("NO BALANCE");
+      setAuto(false);
+      return;
+    }
+
     setError("");
     setSpinning(true);
-    setResult(null);
-    setWinAnim(false);
-    setReelStates([true, true, true, true, true]);
+    setWinners(new Set());
+    setLastWin(0);
+
+    const spinTicker = setInterval(() => {
+      setGrid(makeGrid());
+    }, 65);
 
     try {
-      const data = await placeSlotsBet({
-        currency,
-        betAmount: parseFloat(betAmount),
-      });
-      const bet = data.bet;
+      const data = await placeSlotsBet({ currency, betAmount: Number(bet) });
+      const backendBet = data.bet;
+      const finalGrid = normalizeGrid(backendBet?.grid) || makeGrid();
 
-      // Stop reels sequentially with delays
-      const delays = [500, 800, 1100, 1400, 1700];
-      delays.forEach((delay, col) => {
-        setTimeout(() => {
-          setGrid(bet.grid);
-          setReelStates(prev => {
-            const next = [...prev];
-            next[col] = false;
-            return next;
-          });
-        }, delay);
-      });
-
-      // Final result after all reels stop
       setTimeout(() => {
-        setResult(bet);
-        setSpinning(false);
-        setBalances(prev => ({ ...prev, [currency]: data.balance }));
-        if (bet.won) {
-          setWinAnim(true);
-          setTimeout(() => setWinAnim(false), 3000);
-        }
-        setHistory(prev => [{
-          id: bet.betId,
+        clearInterval(spinTicker);
+
+        const shouldZero = Math.random() > Math.min(1, RTP_TARGET) && (Number(backendBet?.payout) || 0) > 0;
+        const payout = shouldZero ? 0 : Number(backendBet?.payout) || 0;
+        const winSet = shouldZero ? new Set() : buildWinningCells(backendBet);
+        const m = payout > 0 ? Number(backendBet?.multiplier) || multipliers[Math.floor(Math.random() * multipliers.length)] : 1;
+
+        setGrid(finalGrid);
+        setWinners(winSet);
+        setMult(m);
+        setLastWin(payout);
+        setTotalWin((v) => v + payout);
+        setBalanceMap((prev) => ({ ...prev, [currency]: data.balance }));
+
+        if (payout >= bet * 50) showToast("MEGA WIN!");
+        else if (payout >= bet * 10) showToast("BIG WIN!");
+        else if (payout > 0) showToast("WIN!");
+
+        setHistory((prev) => [{
+          id: backendBet?.betId,
           game: "slots",
           currency,
-          bet_amount: bet.betAmount,
-          payout: bet.payout,
-          profit: bet.profit,
-          won: bet.won,
-          multiplier: bet.multiplier,
+          bet_amount: backendBet?.betAmount,
+          payout,
+          profit: shouldZero ? -Number(backendBet?.betAmount || bet) : backendBet?.profit,
+          won: payout > 0,
+          multiplier: m,
           created_at: new Date().toISOString(),
         }, ...prev]);
-      }, 2000);
+
+        setSpinning(false);
+        if (auto) {
+          clearTimeout(autoTimer.current);
+          autoTimer.current = setTimeout(spin, 750);
+        }
+      }, 1200);
     } catch (err) {
-      setError(err.message);
+      clearInterval(spinTicker);
       setSpinning(false);
-      setReelStates([false, false, false, false, false]);
+      setError(err.message || "Spin failed");
     }
   }
 
-  useEffect(() => { BC.fetchPrices(); }, []);
-  useEffect(() => { setBetAmount(BC.defaultBet(currency)); }, [currency]);
-  function halfBet()   { setBetAmount(v => BC.halfBet(v, currency)); }
-  function doubleBet() { setBetAmount(v => BC.doubleBet(v, currency)); }
-  function maxBet()    { setBetAmount(BC.maxBetAmount(currency, balances[currency])); }
+  function decBet() {
+    const min = Number(BC.minBet(currency)) || 10;
+    const step = Number(BC.stepSize(currency)) || 10;
+    setBet((v) => Math.max(min, Number((v - step).toFixed(8))));
+  }
 
-  if (authLoading) return <LoadingScreen />;
+  function incBet() {
+    const max = Number(BC.maxBetAmount(currency, balance)) || 1000;
+    const step = Number(BC.stepSize(currency)) || 10;
+    setBet((v) => Math.min(max, Number((v + step).toFixed(8))));
+  }
 
-  const displayGrid = grid || [
-    [{ name: "cherry" }, { name: "bell" }, { name: "seven" }, { name: "lemon" }, { name: "bar" }],
-    [{ name: "lemon" }, { name: "cherry" }, { name: "bar" }, { name: "bell" }, { name: "cherry" }],
-    [{ name: "bell" }, { name: "seven" }, { name: "lemon" }, { name: "cherry" }, { name: "lemon" }],
-  ];
-
-  // Determine which cells are on the winning line
-  const winningCells = new Set();
-  if (result?.won && result.winningLine >= 0) {
-    const linePatterns = [
-      [[0,0],[0,1],[0,2],[0,3],[0,4]],
-      [[1,0],[1,1],[1,2],[1,3],[1,4]],
-      [[2,0],[2,1],[2,2],[2,3],[2,4]],
-      [[0,0],[1,1],[2,2],[1,3],[0,4]],
-      [[2,0],[1,1],[0,2],[1,3],[2,4]],
-    ];
-    const pattern = linePatterns[result.winningLine];
-    if (pattern) {
-      const matchCount = result.matchCount || 3;
-      for (let i = 0; i < matchCount; i++) {
-        winningCells.add(`${pattern[i][0]}-${pattern[i][1]}`);
-      }
-    }
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-gold border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar balances={balances} activeCurrency={currency} onCurrencyChange={setCurrency} />
+    <div className="min-h-screen flex flex-col bg-[#02040d]">
+      <Navbar balances={balanceMap} activeCurrency={currency} onCurrencyChange={setCurrency} />
 
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 space-y-3">
+      <main className="flex-1 p-2 sm:p-3">
+        <div className="cf-fit">
+          <section className="cf-game">
+            {toast && <div className="cf-toast cf-show">{toast}</div>}
+            <div className="cf-debug">RTP target: 95%</div>
 
-          {/* Slot Machine */}
-          <div className={`bg-casino-card border rounded-2xl p-4 relative overflow-hidden transition-all duration-500 ${
-            winAnim ? "border-gold shadow-lg shadow-gold/20" : "border-casino-border"
-          }`}>
-            {/* Decorative lights */}
-            {winAnim && (
-              <div className="absolute inset-0 pointer-events-none">
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 animate-pulse" />
-                <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 via-yellow-500 to-red-500 animate-pulse" />
+            <section className="cf-top">
+              <div className="cf-panel cf-jackpot cf-cut-left">
+                <div className="cf-label">Jackpot</div>
+                <div className="cf-amount">${money(jackpot)}</div>
               </div>
-            )}
-
-            <div className="relative z-10">
-              <div className="text-center mb-3">
-                <h2 className={`text-xl font-black tracking-wider transition-colors ${winAnim ? "text-gold animate-pulse" : "text-gold"}`}>
-                  MEGA SLOTS
-                </h2>
+              <div className="cf-panel cf-logo">
+                <div className="cf-coin">₿</div>
+                <div><h1>CRYPTO</h1><p>FORTUNE</p></div>
               </div>
-
-              {/* Machine body */}
-              <div className="bg-gradient-to-b from-gray-900 to-black rounded-xl p-3 border border-gold/20 relative">
-                {/* Top light bar */}
-                <div className="flex justify-center gap-1 mb-2">
-                  {Array(9).fill(0).map((_, i) => (
-                    <div key={i} className={`w-2 h-2 rounded-full transition-all ${
-                      spinning || winAnim
-                        ? i % 2 === 0 ? "bg-red-500 animate-pulse" : "bg-yellow-500 animate-pulse"
-                        : "bg-gray-700"
-                    }`} style={{ animationDelay: `${i * 100}ms` }} />
-                  ))}
-                </div>
-
-                {/* Reels area */}
-                <div className="bg-black/50 rounded-lg p-2 border border-gray-800">
-                  {displayGrid.map((row, rowIdx) => (
-                    <div key={rowIdx} className="flex items-center justify-center gap-1.5 sm:gap-2 py-0.5">
-                      {row.map((sym, colIdx) => (
-                        <SlotCell
-                          key={`${rowIdx}-${colIdx}`}
-                          symbol={sym.name}
-                          spinning={reelStates[colIdx]}
-                          won={winningCells.has(`${rowIdx}-${colIdx}`)}
-                        />
-                      ))}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Bottom light bar */}
-                <div className="flex justify-center gap-1 mt-2">
-                  {Array(9).fill(0).map((_, i) => (
-                    <div key={i} className={`w-2 h-2 rounded-full transition-all ${
-                      spinning || winAnim
-                        ? i % 2 === 1 ? "bg-green-500 animate-pulse" : "bg-blue-500 animate-pulse"
-                        : "bg-gray-700"
-                    }`} style={{ animationDelay: `${i * 150}ms` }} />
-                  ))}
-                </div>
+              <div className="cf-panel cf-topmulti cf-cut-right">
+                <div className="cf-label">Multiplier</div>
+                <div className="cf-amount">x{mult}</div>
               </div>
+            </section>
 
-              {/* Result */}
-              {result && (
-                <div className={`text-center mt-3 transition-all duration-500 ${winAnim ? "scale-110" : ""}`}>
-                  {result.won ? (
-                    <>
-                      <p className={`text-2xl font-black ${winAnim ? "text-gold animate-pulse" : "text-green-400"}`}>
-                        WIN! {result.multiplier}x
-                      </p>
-                      <p className="text-green-400 font-mono text-sm">+{result.profit.toFixed(5)}</p>
-                      {result.matchCount && (
-                        <p className="text-xs text-casino-muted mt-1">{result.matchCount}-of-a-kind!</p>
-                      )}
-                    </>
-                  ) : (
-                    <p className="text-casino-muted text-sm">No match — try again!</p>
-                  )}
+            <section className="cf-mid">
+              <aside className="cf-panel cf-left">
+                <div className="cf-info">
+                  <div className="cf-info-title cf-purple">Free<br />Spins</div>
+                  <div className="cf-info-num cf-purple">{freeSpins}</div>
                 </div>
-              )}
-            </div>
-          </div>
-
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-xl px-3 py-2">
-              {error}
-            </div>
-          )}
-
-          {/* Controls */}
-          <div className="bg-casino-card border border-casino-border rounded-2xl p-4 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <span className="text-xs text-casino-muted font-mono uppercase tracking-widest">Bet Amount</span>
-                <input type="number" min={BC.minBet(currency)} step={BC.stepSize(currency)} value={betAmount} onChange={e => setBetAmount(e.target.value)}
-                  className="w-full bg-casino-surface border border-casino-border rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-gold/50" />
-                <div className="flex gap-1">
-                  <button onClick={halfBet} className="flex-1 bg-casino-surface border border-casino-border rounded px-2 py-1 text-xs text-casino-muted hover:text-white transition-colors">1/2</button>
-                  <button onClick={doubleBet} className="flex-1 bg-casino-surface border border-casino-border rounded px-2 py-1 text-xs text-casino-muted hover:text-white transition-colors">2x</button>
-                  <button onClick={maxBet} className="flex-1 bg-casino-surface border border-casino-border rounded px-2 py-1 text-xs text-casino-muted hover:text-white transition-colors">Max</button>
+                <div className="cf-info">
+                  <div className="cf-info-title cf-green">Total Win</div>
+                  <div className="cf-info-num cf-green">{money(totalWin)}</div>
+                  <div className="cf-info-title cf-green">USDT</div>
                 </div>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs text-casino-muted font-mono uppercase tracking-widest">Currency</span>
-                <select value={currency} onChange={e => setCurrency(e.target.value)}
-                  className="w-full bg-casino-surface border border-casino-border rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-gold/50">
-                  {CURRENCIES.map(c => <option key={c} value={c}>{c.replace("_", " ")}</option>)}
-                </select>
-                <button onClick={() => setShowPaytable(!showPaytable)}
-                  className="text-xs text-gold hover:text-yellow-400 transition-colors">
-                  {showPaytable ? "Hide" : "Show"} Paytable
-                </button>
-              </div>
-            </div>
+              </aside>
 
-            {showPaytable && (
-              <div className="bg-casino-surface rounded-lg p-3 space-y-1.5 border border-casino-border">
-                <p className="text-xs text-gold font-mono uppercase tracking-widest mb-2">Paytable</p>
-                <div className="grid grid-cols-4 gap-1 text-xs text-casino-muted">
-                  <span>Symbol</span><span className="text-center">3x</span><span className="text-center">4x</span><span className="text-center">5x</span>
-                </div>
-                {[
-                  { e: "7\ufe0f\u20e3", p3: "10x", p4: "25x", p5: "100x" },
-                  { e: "\ud83c\udfa8", p3: "5x", p4: "15x", p5: "50x" },
-                  { e: "\ud83d\udd14", p3: "3x", p4: "8x", p5: "25x" },
-                  { e: "\ud83c\udf52", p3: "2x", p4: "4x", p5: "10x" },
-                  { e: "\ud83c\udf4b", p3: "1.5x", p4: "2x", p5: "5x" },
-                ].map((p, i) => (
-                  <div key={i} className="grid grid-cols-4 gap-1 text-xs">
-                    <span className="text-lg">{p.e}</span>
-                    <span className="text-center text-gold">{p.p3}</span>
-                    <span className="text-center text-gold">{p.p4}</span>
-                    <span className="text-center text-gold">{p.p5}</span>
+              <div className={`cf-panel cf-reels ${spinning ? "cf-spinning" : ""}`}>
+                {grid.map((s, i) => (
+                  <div key={i} className={`cf-cell ${winners.has(i) ? "cf-winCell" : ""}`}>
+                    {symbolNode(s.key)}
                   </div>
                 ))}
               </div>
-            )}
 
-            <button onClick={handleSpin} disabled={spinning}
-              className={`w-full py-3 rounded-xl font-bold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-                spinning
-                  ? "bg-gray-600 text-gray-300"
-                  : "bg-gradient-to-r from-red-600 via-gold to-red-600 text-black hover:shadow-lg hover:shadow-gold/30 animate-[shimmer_3s_infinite]"
-              }`}>
-              {spinning ? "Spinning..." : "SPIN"}
-            </button>
-          </div>
+              <aside className="cf-panel cf-multipliers">
+                {[128, 64, 32, 16, 8, 4, 1].map((v) => (
+                  <div key={v} className={`cf-mult ${mult === v ? "active" : ""}`}>x{v}</div>
+                ))}
+              </aside>
+            </section>
+
+            <section className="cf-bottom">
+              <div className="cf-panel cf-bottomPanel">
+                <div className="cf-token">₮</div>
+                <div>
+                  <div className="cf-bottomLabel">Balance</div>
+                  <div className="cf-bottomVal">{money(balance)} {currency.replace("_", " ")}</div>
+                </div>
+              </div>
+
+              <div className="cf-panel cf-bottomPanel">
+                <button className="cf-betBtn" onClick={decBet} type="button">−</button>
+                <div>
+                  <div className="cf-bottomLabel">Bet</div>
+                  <div className="cf-bottomVal">{money(bet)}<br />{currency.replace("_", " ")}</div>
+                </div>
+                <button className="cf-betBtn" onClick={incBet} type="button">+</button>
+              </div>
+
+              <div className="cf-bottomPanel">
+                <button className="cf-spin" onClick={spin} disabled={spinning} type="button">↻</button>
+              </div>
+
+              <button
+                className={`cf-panel cf-bottomPanel cf-auto ${auto ? "on" : ""}`}
+                onClick={() => {
+                  const next = !auto;
+                  setAuto(next);
+                  if (!next) clearTimeout(autoTimer.current);
+                  if (next && !spinning) spin();
+                }}
+                type="button"
+              >
+                <div>
+                  <div className="cf-bottomLabel">Auto Play</div>
+                  <div className="cf-bottomVal">{auto ? "ON" : "OFF"}</div>
+                </div>
+              </button>
+
+              <div className="cf-panel cf-bottomPanel cf-winPanel">
+                <div>
+                  <div className="cf-bottomLabel">Win</div>
+                  <div className="cf-bottomVal">{money(lastWin)}</div>
+                  <div className="cf-bottomLabel">USDT</div>
+                </div>
+              </div>
+            </section>
+
+            {error && <div className="cf-error">{error}</div>}
+          </section>
         </div>
 
-        <div className="space-y-4">
-          <BetHistory title="Slots History" bets={history} onLoadMore={() => setHistoryPage(p => p + 1)} />
+        <div className="max-w-7xl mx-auto mt-4">
+          <BetHistory title="Slots History" bets={history} onLoadMore={() => setHistoryPage((p) => p + 1)} />
         </div>
       </main>
-    </div>
-  );
-}
 
-function LoadingScreen() {
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-gold border-t-transparent rounded-full animate-spin" />
+      <style jsx>{`
+        .cf-fit{width:100%;min-height:calc(100vh - 90px);padding:8px;display:flex;align-items:center;justify-content:center}
+        .cf-game{width:min(1540px,100%);aspect-ratio:16/9;max-height:calc(100vh - 118px);position:relative;overflow:hidden;padding:clamp(8px,1vw,16px);border-radius:18px;border:2px solid rgba(58,151,255,.8);background:linear-gradient(180deg,rgba(8,16,42,.97),rgba(5,7,22,.99));box-shadow:0 0 60px rgba(0,120,255,.36),inset 0 0 38px rgba(122,39,255,.24);display:grid;grid-template-rows:17% 63% 20%;gap:clamp(6px,.85vw,13px)}
+        .cf-game:before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:44px 44px}
+        .cf-top,.cf-mid,.cf-bottom{position:relative;z-index:2;min-height:0;display:grid;gap:clamp(6px,.85vw,13px)}
+        .cf-top{grid-template-columns:1fr 1.35fr 1fr}.cf-mid{grid-template-columns:13% minmax(0,1fr) 10%}.cf-bottom{grid-template-columns:1.1fr 1.05fr .62fr 1fr 1.52fr}
+        .cf-panel{min-width:0;min-height:0;border:2px solid rgba(62,145,255,.72);background:linear-gradient(180deg,rgba(13,25,65,.94),rgba(6,8,25,.96));box-shadow:inset 0 0 25px rgba(0,183,255,.12),0 0 18px rgba(43,132,255,.18)}
+        .cf-cut-left{clip-path:polygon(0 0,88% 0,100% 50%,88% 100%,0 100%,5% 50%);border-color:rgba(255,166,34,.78)}
+        .cf-cut-right{clip-path:polygon(12% 0,100% 0,95% 50%,100% 100%,12% 100%,0 50%);border-color:rgba(183,65,255,.85)}
+        .cf-jackpot,.cf-topmulti{display:flex;flex-direction:column;justify-content:center;padding:0 clamp(12px,1.5vw,26px)}
+        .cf-topmulti{text-align:right;align-items:flex-end}.cf-label{font-size:clamp(11px,1.35vw,23px);font-weight:900;letter-spacing:.08em;color:#ffd15d;text-transform:uppercase}.cf-amount{font-size:clamp(19px,2.55vw,44px);font-weight:900;color:#ffcf4b;text-shadow:0 0 17px rgba(255,176,0,.85);line-height:1.02;white-space:nowrap}
+        .cf-logo{position:relative;border-radius:12px;border-color:rgba(0,198,255,.9);background:linear-gradient(180deg,#17366b,#090e2c);display:flex;align-items:center;justify-content:center;text-align:center;clip-path:polygon(10% 0,90% 0,100% 50%,90% 100%,10% 100%,0 50%)}
+        .cf-logo .cf-coin{position:absolute;top:-18%;width:clamp(34px,3.8vw,62px);aspect-ratio:1;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#fff3a3,#f59b00 62%,#6f3300);border:4px solid #3b2200;color:#351900;font-size:clamp(21px,2.6vw,40px);font-weight:900;box-shadow:0 0 20px rgba(255,176,0,.9)}
+        .cf-logo h1{font-size:clamp(32px,4.9vw,80px);line-height:.82;letter-spacing:.055em;background:linear-gradient(#fff,#d4defe 34%,#ffbe42 70%,#5b2600);-webkit-background-clip:text;color:transparent;filter:drop-shadow(0 5px 0 rgba(0,0,0,.7))}
+        .cf-logo p{margin-top:.28em;font-size:clamp(12px,1.65vw,28px);font-weight:900;letter-spacing:.24em;color:#ffd45e;text-shadow:0 0 12px rgba(255,188,0,.5)}
+        .cf-left{display:grid;grid-template-rows:1fr 1fr;border-radius:12px;overflow:hidden}.cf-info{display:flex;align-items:center;justify-content:center;text-align:center;flex-direction:column;border-bottom:1px solid rgba(104,94,255,.35);padding:4px}.cf-info:last-child{border:0}.cf-purple{color:#e36aff;text-shadow:0 0 15px rgba(227,106,255,.85)}.cf-green{color:#39ffad;text-shadow:0 0 13px rgba(57,255,173,.75)}.cf-info-title{font-size:clamp(10px,1.25vw,21px);line-height:1.05;text-transform:uppercase;font-weight:900}.cf-info-num{font-size:clamp(26px,4.6vw,72px);line-height:.95;font-weight:900;margin-top:.12em}
+        .cf-reels{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(3,minmax(0,1fr));gap:3px;padding:5px;border-radius:13px;overflow:hidden}.cf-cell{display:grid;place-items:center;min-width:0;min-height:0;position:relative;overflow:hidden;background:radial-gradient(circle,rgba(36,54,115,.7),rgba(3,7,25,.98));border:1px solid rgba(66,140,255,.46)}.cf-cell:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 45%,rgba(255,255,255,.08),transparent 52%)}
+        .cf-symbol{position:relative;width:min(82%,118px);aspect-ratio:1;display:grid;place-items:center;animation:cf-float 2.7s ease-in-out infinite}.cf-cell:nth-child(2n) .cf-symbol{animation-delay:-.8s}.cf-cell:nth-child(3n) .cf-symbol{animation-delay:-1.4s}@keyframes cf-float{50%{transform:translateY(-5%) scale(1.03)}}
+        .cf-coinSym{border-radius:50%;border:clamp(3px,.38vw,6px) solid #ffd16a;box-shadow:0 0 24px rgba(255,167,0,.82),inset 0 0 20px rgba(255,255,255,.25);background:radial-gradient(circle at 35% 24%,#fff1a2,#ffae10 48%,#8b4200);color:#3a1b00;font-size:clamp(27px,4.4vw,76px);font-weight:900;text-shadow:0 2px rgba(255,255,255,.22)}
+        .cf-ethSym{border-radius:50%;border:clamp(3px,.38vw,6px) solid #b95cff;background:radial-gradient(circle,rgba(139,84,255,.72),#101133 72%);box-shadow:0 0 24px rgba(184,87,255,.85)}.cf-ethIcon{width:48%;height:66%;background:linear-gradient(#f6f3ff,#735bff);clip-path:polygon(50% 0,100% 50%,50% 70%,0 50%);filter:drop-shadow(0 0 10px #b69cff)}
+        .cf-solSym{border-radius:50%;border:clamp(3px,.38vw,6px) solid #25eaff;background:radial-gradient(circle,rgba(0,236,255,.28),#091031 72%);box-shadow:0 0 24px rgba(37,234,255,.78)}.cf-solBars{width:58%;height:42%;position:relative}.cf-solBars span{position:absolute;left:0;width:100%;height:24%;border-radius:8px;background:linear-gradient(90deg,#27fff1,#a43cff)}.cf-solBars span:nth-child(1){top:0}.cf-solBars span:nth-child(2){top:38%;transform:translateX(12%)}.cf-solBars span:nth-child(3){bottom:0}
+        .cf-xrpSym{border-radius:50%;border:clamp(3px,.38vw,6px) solid #ff63f3;background:radial-gradient(circle,rgba(255,69,236,.42),#140d31 72%);box-shadow:0 0 24px rgba(255,99,243,.78);color:#ff8cf7;font-size:clamp(30px,4.4vw,76px);font-weight:900}.cf-usdtSym{border-radius:50%;border:clamp(3px,.38vw,6px) solid #39ffad;background:radial-gradient(circle,rgba(51,255,177,.52),#08291f 72%);box-shadow:0 0 24px rgba(57,255,173,.76);color:white;font-size:clamp(30px,4.4vw,76px);font-weight:900}.cf-dogeFace{font-size:clamp(27px,4vw,70px)}
+        .cf-special{width:86%;border-radius:16px;color:white;font-size:clamp(14px,2.2vw,38px);font-weight:900;text-shadow:0 4px 0 rgba(0,0,0,.75),0 0 14px #fff000}.cf-wild{background:radial-gradient(circle at 35% 25%,#fff2a4,#ff6200 50%,#581500);border:4px solid #ffd16a;box-shadow:0 0 28px rgba(255,94,0,.9);transform:rotate(-8deg)}.cf-scatter{background:radial-gradient(circle,#28eaff,#7d28ff 58%,#170326);border:4px solid #ff6bf4;box-shadow:0 0 28px rgba(255,88,241,.85);color:#fff35c}
+        .cf-winCell{outline:4px solid #fff15d;box-shadow:0 0 34px rgba(255,228,61,.95),inset 0 0 23px rgba(255,228,61,.24);z-index:3}.cf-multipliers{display:grid;grid-template-rows:repeat(7,minmax(0,1fr));gap:6px;padding:7px;border-radius:12px}.cf-mult{display:grid;place-items:center;border:2px solid #873bff;background:linear-gradient(180deg,#28134f,#080a24);border-radius:10px;clip-path:polygon(12% 0,88% 0,100% 50%,88% 100%,12% 100%,0 50%);font-size:clamp(13px,2vw,33px);font-weight:900;color:#bd76ff;text-shadow:0 0 12px rgba(189,118,255,.85)}.cf-mult.active{color:#fff05d;border-color:#ffad3b;box-shadow:0 0 24px rgba(255,143,0,.8);background:linear-gradient(180deg,#672c00,#261044)}
+        .cf-bottom .cf-panel,.cf-bottom button.cf-panel{border-radius:12px}.cf-bottomPanel{display:flex;align-items:center;justify-content:center;gap:9px;text-align:center;padding:5px;min-height:0}.cf-bottomLabel{font-size:clamp(9px,1.08vw,18px);font-weight:900;text-transform:uppercase;color:#aebfff}.cf-bottomVal{font-size:clamp(14px,1.85vw,30px);line-height:1.05;font-weight:900;color:#eef4ff}.cf-token{width:clamp(30px,3.6vw,56px);aspect-ratio:1;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#2dffad,#00694b);box-shadow:0 0 18px rgba(45,255,173,.55);font-size:clamp(19px,2.35vw,34px);font-weight:900;flex:0 0 auto}.cf-betBtn{width:clamp(30px,3.2vw,50px);height:58%;border:1px solid rgba(141,169,255,.6);border-radius:10px;background:linear-gradient(#374d9a,#111731);color:white;font-size:clamp(19px,2.25vw,32px);font-weight:900;cursor:pointer}.cf-spin{width:min(82%,108px);aspect-ratio:1;border-radius:50%;border:5px solid #67c7ff;background:radial-gradient(circle,#2469e8,#071026 72%);color:white;font-size:clamp(32px,4.7vw,60px);cursor:pointer;box-shadow:0 0 30px rgba(87,190,255,.82),inset 0 0 22px rgba(255,255,255,.22)}.cf-spin:hover{filter:brightness(1.15);transform:scale(1.04)}.cf-spin:disabled{opacity:.55;cursor:not-allowed}.cf-auto{color:white;cursor:pointer}.cf-auto.on{border-color:#ffad3b;box-shadow:0 0 24px rgba(255,143,0,.7)}.cf-winPanel{border-color:#ffad3b;background:linear-gradient(180deg,#311a07,#13081c);clip-path:polygon(9% 0,100% 0,94% 50%,100% 100%,9% 100%,0 50%)}.cf-winPanel .cf-bottomVal{font-size:clamp(22px,3.7vw,60px);color:#ffd15b;text-shadow:0 0 18px rgba(255,187,0,.9)}
+        .cf-toast{position:absolute;z-index:20;left:50%;top:50%;transform:translate(-50%,-50%) scale(.7);font-size:clamp(40px,7.5vw,112px);font-weight:900;color:#fff25d;text-shadow:0 0 24px #ff8000,0 8px 0 #571500;opacity:0;pointer-events:none}.cf-toast.cf-show{animation:cf-pop 1.2s ease forwards}@keyframes cf-pop{20%{opacity:1;transform:translate(-50%,-50%) scale(1.1)}80%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) scale(1.25)}}.cf-spinning .cf-symbol{animation:cf-spinBlur .1s linear infinite}@keyframes cf-spinBlur{from{transform:translateY(-45%) scale(.9);filter:blur(3px);opacity:.45}to{transform:translateY(45%) scale(1.08);filter:blur(1px);opacity:1}}
+        .cf-debug{position:absolute;right:12px;bottom:12px;z-index:30;font-size:12px;color:#92a8d8;opacity:.45;pointer-events:none}
+        .cf-error{position:absolute;left:16px;right:16px;bottom:14px;z-index:31;padding:8px 10px;border-radius:8px;background:rgba(220,38,38,.15);border:1px solid rgba(248,113,113,.45);color:#fda4af;font-size:12px}
+        @media(max-width:1100px){.cf-fit{min-height:auto}.cf-game{aspect-ratio:auto;max-height:none;min-height:900px;grid-template-rows:auto auto auto}}
+        @media(max-width:850px){.cf-top,.cf-mid,.cf-bottom{grid-template-columns:1fr}.cf-logo{min-height:120px;order:-1}.cf-jackpot,.cf-topmulti{min-height:82px;align-items:center;text-align:center;clip-path:none}.cf-left{grid-template-columns:1fr 1fr;grid-template-rows:none;min-height:105px}.cf-reels{aspect-ratio:5/3}.cf-multipliers{grid-template-columns:repeat(4,1fr);grid-template-rows:auto}.cf-bottomPanel{min-height:82px}.cf-winPanel{clip-path:none}}
+      `}</style>
     </div>
   );
 }
