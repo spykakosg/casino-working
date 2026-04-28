@@ -69,6 +69,7 @@ async function generateAddressForUser(userId) {
            AND currency = $3
            AND (
              deposit_address IS NULL
+             OR deposit_address = ''
              OR deposit_address LIKE '0xDEMO%'
              OR deposit_address LIKE 'bc1q_placeholder_%'
            )`,
