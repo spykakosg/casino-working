@@ -3,13 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
-import BetHistory from "@/components/BetHistory";
 import { useAuth } from "@/context/AuthContext";
-import { getBalances, getSlotsBetHistory, placeSlotsBet } from "@/lib/api";
+import { getBalances, placeSlotsBet } from "@/lib/api";
 import * as BC from "@/lib/betConfig";
 
 const CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
-const RTP_TARGET = 0.95;
 const reelCount = 5;
 const rowCount = 3;
 const totalCells = reelCount * rowCount;
@@ -90,15 +88,15 @@ function normalizeGrid(rawGrid) {
   return null;
 }
 
-function symbolNode(key) {
-  if (key === "btc") return <div className="cf-symbol cf-coinSym">₿</div>;
-  if (key === "doge") return <div className="cf-symbol cf-coinSym"><span className="cf-dogeFace">D</span></div>;
-  if (key === "eth") return <div className="cf-symbol cf-ethSym"><div className="cf-ethIcon" /></div>;
-  if (key === "sol") return <div className="cf-symbol cf-solSym"><div className="cf-solBars"><span /><span /><span /></div></div>;
-  if (key === "xrp") return <div className="cf-symbol cf-xrpSym">X</div>;
-  if (key === "usdt") return <div className="cf-symbol cf-usdtSym">₮</div>;
-  if (key === "wild") return <div className="cf-symbol cf-special cf-wild">🚀<br />WILD</div>;
-  return <div className="cf-symbol cf-special cf-scatter">💎<br />SCATTER</div>;
+function iconHTML(key) {
+  if (key === "btc") return '<div class="cf-symbol cf-coinSym">₿</div>';
+  if (key === "doge") return '<div class="cf-symbol cf-coinSym"><span class="cf-dogeFace">D</span></div>';
+  if (key === "eth") return '<div class="cf-symbol cf-ethSym"><div class="cf-ethIcon"></div></div>';
+  if (key === "sol") return '<div class="cf-symbol cf-solSym"><div class="cf-solBars"><span></span><span></span><span></span></div></div>';
+  if (key === "xrp") return '<div class="cf-symbol cf-xrpSym">X</div>';
+  if (key === "usdt") return '<div class="cf-symbol cf-usdtSym">₮</div>';
+  if (key === "wild") return '<div class="cf-symbol cf-special cf-wild">🚀<br>WILD</div>';
+  return '<div class="cf-symbol cf-special cf-scatter">💎<br>SCATTER</div>';
 }
 
 function buildWinningCells(result) {
@@ -121,8 +119,6 @@ export default function SlotsPage() {
   const [currency, setCurrency] = useState("USDT_POLYGON");
   const [bet, setBet] = useState(100);
   const [balanceMap, setBalanceMap] = useState({});
-  const [history, setHistory] = useState([]);
-  const [historyPage, setHistoryPage] = useState(0);
 
   const [grid, setGrid] = useState(() => [
     { key: "eth" }, { key: "doge" }, { key: "btc" }, { key: "sol" }, { key: "doge" },
@@ -140,6 +136,7 @@ export default function SlotsPage() {
   const [error, setError] = useState("");
 
   const autoTimer = useRef(null);
+  const autoRef = useRef(false);
 
   const balance = Number(balanceMap[currency] || 0);
   const jackpot = useMemo(() => 251459.7 + totalWin * 0.02, [totalWin]);
@@ -161,12 +158,10 @@ export default function SlotsPage() {
     fetchBalances();
   }, [user]);
 
-  useEffect(() => {
-    if (!user) return;
-    fetchHistory();
-  }, [user, historyPage]);
-
   useEffect(() => () => clearTimeout(autoTimer.current), []);
+  useEffect(() => {
+    autoRef.current = auto;
+  }, [auto]);
 
   async function fetchBalances() {
     try {
@@ -174,15 +169,6 @@ export default function SlotsPage() {
       const map = {};
       for (const [k, v] of Object.entries(data.balances || {})) map[k] = v.balance;
       setBalanceMap(map);
-    } catch {
-      // ignore
-    }
-  }
-
-  async function fetchHistory() {
-    try {
-      const data = await getSlotsBetHistory(20, historyPage * 20);
-      setHistory((prev) => (historyPage === 0 ? data.bets : [...prev, ...data.bets]));
     } catch {
       // ignore
     }
@@ -218,9 +204,8 @@ export default function SlotsPage() {
       setTimeout(() => {
         clearInterval(spinTicker);
 
-        const shouldZero = Math.random() > Math.min(1, RTP_TARGET) && (Number(backendBet?.payout) || 0) > 0;
-        const payout = shouldZero ? 0 : Number(backendBet?.payout) || 0;
-        const winSet = shouldZero ? new Set() : buildWinningCells(backendBet);
+        const payout = Number(backendBet?.payout) || 0;
+        const winSet = buildWinningCells(backendBet);
         const m = payout > 0 ? Number(backendBet?.multiplier) || multipliers[Math.floor(Math.random() * multipliers.length)] : 1;
 
         setGrid(finalGrid);
@@ -234,20 +219,8 @@ export default function SlotsPage() {
         else if (payout >= bet * 10) showToast("BIG WIN!");
         else if (payout > 0) showToast("WIN!");
 
-        setHistory((prev) => [{
-          id: backendBet?.betId,
-          game: "slots",
-          currency,
-          bet_amount: backendBet?.betAmount,
-          payout,
-          profit: shouldZero ? -Number(backendBet?.betAmount || bet) : backendBet?.profit,
-          won: payout > 0,
-          multiplier: m,
-          created_at: new Date().toISOString(),
-        }, ...prev]);
-
         setSpinning(false);
-        if (auto) {
+        if (autoRef.current) {
           clearTimeout(autoTimer.current);
           autoTimer.current = setTimeout(spin, 750);
         }
@@ -287,7 +260,6 @@ export default function SlotsPage() {
         <div className="cf-fit">
           <section className="cf-game">
             {toast && <div className="cf-toast cf-show">{toast}</div>}
-            <div className="cf-debug">RTP target: 95%</div>
 
             <section className="cf-top">
               <div className="cf-panel cf-jackpot cf-cut-left">
@@ -320,7 +292,7 @@ export default function SlotsPage() {
               <div className={`cf-panel cf-reels ${spinning ? "cf-spinning" : ""}`}>
                 {grid.map((s, i) => (
                   <div key={i} className={`cf-cell ${winners.has(i) ? "cf-winCell" : ""}`}>
-                    {symbolNode(s.key)}
+                    <div dangerouslySetInnerHTML={{ __html: iconHTML(s.key) }} />
                   </div>
                 ))}
               </div>
@@ -383,14 +355,11 @@ export default function SlotsPage() {
           </section>
         </div>
 
-        <div className="max-w-7xl mx-auto mt-4">
-          <BetHistory title="Slots History" bets={history} onLoadMore={() => setHistoryPage((p) => p + 1)} />
-        </div>
       </main>
 
       <style jsx>{`
-        .cf-fit{width:100%;min-height:calc(100vh - 90px);padding:8px;display:flex;align-items:center;justify-content:center}
-        .cf-game{width:min(1540px,100%);aspect-ratio:16/9;max-height:calc(100vh - 118px);position:relative;overflow:hidden;padding:clamp(8px,1vw,16px);border-radius:18px;border:2px solid rgba(58,151,255,.8);background:linear-gradient(180deg,rgba(8,16,42,.97),rgba(5,7,22,.99));box-shadow:0 0 60px rgba(0,120,255,.36),inset 0 0 38px rgba(122,39,255,.24);display:grid;grid-template-rows:17% 63% 20%;gap:clamp(6px,.85vw,13px)}
+        .cf-fit{width:100%;min-height:calc(100vh - 90px);padding:8px;display:flex;align-items:flex-start;justify-content:center}
+        .cf-game{width:min(1540px,100%);aspect-ratio:16/9;position:relative;overflow:hidden;padding:clamp(8px,1vw,16px);border-radius:18px;border:2px solid rgba(58,151,255,.8);background:linear-gradient(180deg,rgba(8,16,42,.97),rgba(5,7,22,.99));box-shadow:0 0 60px rgba(0,120,255,.36),inset 0 0 38px rgba(122,39,255,.24);display:grid;grid-template-rows:17% 63% 20%;gap:clamp(6px,.85vw,13px)}
         .cf-game:before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:44px 44px}
         .cf-top,.cf-mid,.cf-bottom{position:relative;z-index:2;min-height:0;display:grid;gap:clamp(6px,.85vw,13px)}
         .cf-top{grid-template-columns:1fr 1.35fr 1fr}.cf-mid{grid-template-columns:13% minmax(0,1fr) 10%}.cf-bottom{grid-template-columns:1.1fr 1.05fr .62fr 1fr 1.52fr}
@@ -414,9 +383,8 @@ export default function SlotsPage() {
         .cf-winCell{outline:4px solid #fff15d;box-shadow:0 0 34px rgba(255,228,61,.95),inset 0 0 23px rgba(255,228,61,.24);z-index:3}.cf-multipliers{display:grid;grid-template-rows:repeat(7,minmax(0,1fr));gap:6px;padding:7px;border-radius:12px}.cf-mult{display:grid;place-items:center;border:2px solid #873bff;background:linear-gradient(180deg,#28134f,#080a24);border-radius:10px;clip-path:polygon(12% 0,88% 0,100% 50%,88% 100%,12% 100%,0 50%);font-size:clamp(13px,2vw,33px);font-weight:900;color:#bd76ff;text-shadow:0 0 12px rgba(189,118,255,.85)}.cf-mult.active{color:#fff05d;border-color:#ffad3b;box-shadow:0 0 24px rgba(255,143,0,.8);background:linear-gradient(180deg,#672c00,#261044)}
         .cf-bottom .cf-panel,.cf-bottom button.cf-panel{border-radius:12px}.cf-bottomPanel{display:flex;align-items:center;justify-content:center;gap:9px;text-align:center;padding:5px;min-height:0}.cf-bottomLabel{font-size:clamp(9px,1.08vw,18px);font-weight:900;text-transform:uppercase;color:#aebfff}.cf-bottomVal{font-size:clamp(14px,1.85vw,30px);line-height:1.05;font-weight:900;color:#eef4ff}.cf-token{width:clamp(30px,3.6vw,56px);aspect-ratio:1;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#2dffad,#00694b);box-shadow:0 0 18px rgba(45,255,173,.55);font-size:clamp(19px,2.35vw,34px);font-weight:900;flex:0 0 auto}.cf-betBtn{width:clamp(30px,3.2vw,50px);height:58%;border:1px solid rgba(141,169,255,.6);border-radius:10px;background:linear-gradient(#374d9a,#111731);color:white;font-size:clamp(19px,2.25vw,32px);font-weight:900;cursor:pointer}.cf-spin{width:min(82%,108px);aspect-ratio:1;border-radius:50%;border:5px solid #67c7ff;background:radial-gradient(circle,#2469e8,#071026 72%);color:white;font-size:clamp(32px,4.7vw,60px);cursor:pointer;box-shadow:0 0 30px rgba(87,190,255,.82),inset 0 0 22px rgba(255,255,255,.22)}.cf-spin:hover{filter:brightness(1.15);transform:scale(1.04)}.cf-spin:disabled{opacity:.55;cursor:not-allowed}.cf-auto{color:white;cursor:pointer}.cf-auto.on{border-color:#ffad3b;box-shadow:0 0 24px rgba(255,143,0,.7)}.cf-winPanel{border-color:#ffad3b;background:linear-gradient(180deg,#311a07,#13081c);clip-path:polygon(9% 0,100% 0,94% 50%,100% 100%,9% 100%,0 50%)}.cf-winPanel .cf-bottomVal{font-size:clamp(22px,3.7vw,60px);color:#ffd15b;text-shadow:0 0 18px rgba(255,187,0,.9)}
         .cf-toast{position:absolute;z-index:20;left:50%;top:50%;transform:translate(-50%,-50%) scale(.7);font-size:clamp(40px,7.5vw,112px);font-weight:900;color:#fff25d;text-shadow:0 0 24px #ff8000,0 8px 0 #571500;opacity:0;pointer-events:none}.cf-toast.cf-show{animation:cf-pop 1.2s ease forwards}@keyframes cf-pop{20%{opacity:1;transform:translate(-50%,-50%) scale(1.1)}80%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) scale(1.25)}}.cf-spinning .cf-symbol{animation:cf-spinBlur .1s linear infinite}@keyframes cf-spinBlur{from{transform:translateY(-45%) scale(.9);filter:blur(3px);opacity:.45}to{transform:translateY(45%) scale(1.08);filter:blur(1px);opacity:1}}
-        .cf-debug{position:absolute;right:12px;bottom:12px;z-index:30;font-size:12px;color:#92a8d8;opacity:.45;pointer-events:none}
         .cf-error{position:absolute;left:16px;right:16px;bottom:14px;z-index:31;padding:8px 10px;border-radius:8px;background:rgba(220,38,38,.15);border:1px solid rgba(248,113,113,.45);color:#fda4af;font-size:12px}
-        @media(max-width:1100px){.cf-fit{min-height:auto}.cf-game{aspect-ratio:auto;max-height:none;min-height:900px;grid-template-rows:auto auto auto}}
+        @media(max-width:1100px){.cf-fit{min-height:auto}.cf-game{aspect-ratio:auto;max-height:none;min-height:980px;grid-template-rows:auto auto auto}}
         @media(max-width:850px){.cf-top,.cf-mid,.cf-bottom{grid-template-columns:1fr}.cf-logo{min-height:120px;order:-1}.cf-jackpot,.cf-topmulti{min-height:82px;align-items:center;text-align:center;clip-path:none}.cf-left{grid-template-columns:1fr 1fr;grid-template-rows:none;min-height:105px}.cf-reels{aspect-ratio:5/3}.cf-multipliers{grid-template-columns:repeat(4,1fr);grid-template-rows:auto}.cf-bottomPanel{min-height:82px}.cf-winPanel{clip-path:none}}
       `}</style>
     </div>
