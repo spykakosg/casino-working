@@ -5,7 +5,7 @@ function isCryptoCurrency(currency) {
 }
 
 function getMinBet(currency) {
-  return isCryptoCurrency(currency) ? 0.00000001 : 0.001;
+  return isCryptoCurrency(currency) ? 0.00000100 : 0.001;
 }
 
 function getMinBetDecimals(currency) {

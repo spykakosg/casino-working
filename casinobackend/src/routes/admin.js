@@ -145,6 +145,9 @@ router.put("/users/:id/ban", async (req, res) => {
 router.put("/users/:id/credit", async (req, res) => {
   const { currency, amount } = req.body;
   const VALID_CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
+  const currencyCandidates = currency === "USDT"
+    ? ["USDT", "USDT_POLYGON", "USDT_TRON"]
+    : [currency];
 
   if (!currency || !VALID_CURRENCIES.includes(currency)) {
     return res.status(400).json({ error: `currency must be one of: ${VALID_CURRENCIES.join(", ")}` });
@@ -156,8 +159,23 @@ router.put("/users/:id/credit", async (req, res) => {
 
   try {
     const walletRes = await req.db.query(
-      "UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE user_id = $2 AND currency = $3 RETURNING balance",
-      [creditAmount, req.params.id, currency]
+      `UPDATE wallets
+       SET balance = balance + $1, updated_at = NOW()
+       WHERE id = (
+         SELECT id
+         FROM wallets
+         WHERE user_id = $2
+           AND currency = ANY($3::text[])
+         ORDER BY CASE
+           WHEN currency = 'USDT' THEN 0
+           WHEN currency = 'USDT_POLYGON' THEN 1
+           WHEN currency = 'USDT_TRON' THEN 2
+           ELSE 3
+         END
+         LIMIT 1
+       )
+       RETURNING balance, currency`,
+      [creditAmount, req.params.id, currencyCandidates]
     );
 
     if (walletRes.rows.length === 0) {
@@ -167,7 +185,7 @@ router.put("/users/:id/credit", async (req, res) => {
     return res.json({
       success: true,
       userId: parseInt(req.params.id),
-      currency,
+      currency: walletRes.rows[0].currency,
       credited: creditAmount,
       newBalance: parseFloat(walletRes.rows[0].balance),
     });

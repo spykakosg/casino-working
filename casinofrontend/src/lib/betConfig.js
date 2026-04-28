@@ -24,7 +24,7 @@ export function displayDecimals(currency) {
 }
 
 export function minBet(currency) {
-  return isCrypto(currency) ? 0.00000001 : 0.1;
+  return isCrypto(currency) ? 0.00000100 : 0.1;
 }
 
 export function defaultBet(currency) {
@@ -34,7 +34,7 @@ export function defaultBet(currency) {
 }
 
 export function stepSize(currency) {
-  return isCrypto(currency) ? 0.00000001 : 0.1;
+  return isCrypto(currency) ? 0.00000100 : 0.1;
 }
 
 export function maxBetForCurrency(currency) {
