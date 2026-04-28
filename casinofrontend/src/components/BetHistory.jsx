@@ -45,8 +45,11 @@ function BetRow({ bet }) {
   const ccy = bet.currency || "";
   const isCrypto = ccy === "BTC" || ccy === "ETH_POLYGON";
   const epsilon = isCrypto ? 0.0000000001 : 0.00001;
-  const isPush = Math.abs(profit) < epsilon;
-  const isWin = profit > epsilon;
+  const hasWonFlag = bet.won !== undefined && bet.won !== null;
+  const isWin = hasWonFlag ? !!bet.won : profit > epsilon;
+  const isPush = hasWonFlag
+    ? !isWin && Math.abs(profit) < epsilon && payout > 0
+    : Math.abs(profit) < epsilon;
   const dec = isCrypto ? 10 : 5;
   function fmt(v) { return v.toFixed(dec); }
   return (

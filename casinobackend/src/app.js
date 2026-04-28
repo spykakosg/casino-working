@@ -8,6 +8,8 @@ const http     = require("http");
 const cors     = require("cors");
 const helmet   = require("helmet");
 const rateLimit = require("express-rate-limit");
+const fs = require("fs");
+const path = require("path");
 
 const pool = require("./db/pool");
 const authRouter   = require("./routes/auth");
@@ -70,12 +72,35 @@ app.get("/health", async (_req, res) => {
 app.use((_req, res) => res.status(404).json({ error: "Route not found" }));
 app.use((err, _req, res, _next) => { console.error(err); res.status(500).json({ error: "Internal server error" }); });
 
+async function ensurePrecisionMigration() {
+  const migrationPath = path.join(__dirname, "db", "migrate_precision_10.sql");
+  if (!fs.existsSync(migrationPath)) return;
+
+  const sql = fs.readFileSync(migrationPath, "utf8");
+  const statements = sql
+    .split(";")
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  for (const statement of statements) {
+    await pool.query(statement);
+  }
+}
+
 // ─── Start ────────────────────────────────────────────────────────────────────
-server.listen(PORT, () => {
-  console.log(`🎲 Casino backend running on http://localhost:${PORT}`);
-  console.log(`   Routes: /api/auth  /api/games  /api/crash  /api/blackjack  /api/wallet  /api/admin`);
-  // Boot crash game (WebSocket + game loop)
-  initCrash(server, pool);
-});
+(async () => {
+  try {
+    await ensurePrecisionMigration();
+  } catch (err) {
+    console.error("Failed to apply precision migration:", err.message);
+  }
+
+  server.listen(PORT, () => {
+    console.log(`🎲 Casino backend running on http://localhost:${PORT}`);
+    console.log(`   Routes: /api/auth  /api/games  /api/crash  /api/blackjack  /api/wallet  /api/admin`);
+    // Boot crash game (WebSocket + game loop)
+    initCrash(server, pool);
+  });
+})();
 
 module.exports = app;
