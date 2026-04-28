@@ -19,19 +19,30 @@
 
 require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env") });
 const { ethers } = require("ethers");
-const bitcoin = require("bitcoinjs-lib");
-const ecc = require("tiny-secp256k1");
-const { BIP32Factory } = require("bip32");
-const bip39 = require("bip39");
 const pool = require("../db/pool");
 
 let hasWarnedInvalidMnemonic = false;
-bitcoin.initEccLib(ecc);
-const bip32 = BIP32Factory(ecc);
+let hasWarnedMissingBtcDeps = false;
+
+let bitcoin = null;
+let bip32 = null;
+let bip39 = null;
+
+try {
+  bitcoin = require("bitcoinjs-lib");
+  const ecc = require("tiny-secp256k1");
+  const { BIP32Factory } = require("bip32");
+  bip39 = require("bip39");
+  bitcoin.initEccLib(ecc);
+  bip32 = BIP32Factory(ecc);
+} catch {
+  // BTC derivation deps are optional in environments where npm install is restricted.
+}
 
 function getNormalizedMnemonic() {
   const raw = (process.env.WALLET_MNEMONIC || "").trim().toLowerCase();
   if (!raw) return null;
+  if (!bip39) return raw;
   if (!bip39.validateMnemonic(raw)) {
     if (!hasWarnedInvalidMnemonic) {
       hasWarnedInvalidMnemonic = true;
@@ -65,6 +76,13 @@ function deriveEVMAddress(index) {
 
 function deriveBTCAddress(index) {
   const fallback = `bc1q_placeholder_${index}`;
+  if (!bitcoin || !bip32 || !bip39) {
+    if (!hasWarnedMissingBtcDeps) {
+      hasWarnedMissingBtcDeps = true;
+      console.warn("⚠️ Missing BTC libs (bitcoinjs-lib/bip32/bip39/tiny-secp256k1). Using placeholder BTC addresses.");
+    }
+    return fallback;
+  }
   const mnemonic = getNormalizedMnemonic();
   if (!mnemonic) return fallback;
 
