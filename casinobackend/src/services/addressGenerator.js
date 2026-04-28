@@ -109,15 +109,15 @@ async function generateAddressForUser(userId) {
   try {
     await client.query("BEGIN");
 
-    // Use the userId as the derivation index (simple, deterministic)
-    // In production you may want a separate sequential counter table
-    const index = userId;
+    // Use deterministic, per-currency derivation indexes so each wallet row
+    // has a unique deposit_address (wallets.deposit_address is UNIQUE).
+    const baseIndex = userId * 10;
 
     const currencies = [
-      { currency: "ETH_POLYGON", address: deriveEVMAddress(index) },
-      { currency: "USDT", address: deriveEVMAddress(index) }, // same address, different token
-      { currency: "USDT_POLYGON", address: deriveEVMAddress(index) },
-      { currency: "BTC", address: deriveBTCAddress(index) },
+      { currency: "ETH_POLYGON", address: deriveEVMAddress(baseIndex + 0) },
+      { currency: "USDT", address: deriveEVMAddress(baseIndex + 1) },
+      { currency: "USDT_POLYGON", address: deriveEVMAddress(baseIndex + 2) },
+      { currency: "BTC", address: deriveBTCAddress(baseIndex + 3) },
     ];
 
     for (const { currency, address } of currencies) {
