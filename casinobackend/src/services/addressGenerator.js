@@ -65,7 +65,13 @@ async function generateAddressForUser(userId) {
     for (const { currency, address } of currencies) {
       await client.query(
         `UPDATE wallets SET deposit_address = $1
-         WHERE user_id = $2 AND currency = $3 AND deposit_address IS NULL`,
+         WHERE user_id = $2
+           AND currency = $3
+           AND (
+             deposit_address IS NULL
+             OR deposit_address LIKE '0xDEMO%'
+             OR deposit_address LIKE 'bc1q_placeholder_%'
+           )`,
         [address, userId, currency]
       );
     }
