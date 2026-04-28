@@ -30,7 +30,7 @@ router.use(auth, adminOnly);
 // ─── Platform Stats ───────────────────────────────────────────────────────────
 router.get("/stats", async (req, res) => {
   try {
-    const [usersRes, betsRes, dailyBetsRes, depositRes, withdrawalRes] = await Promise.all([
+    const [usersRes, betsRes, dailyBetsRes, depositRes, withdrawalRes, pnlByCurrencyRes, dailyPnlByCurrencyRes] = await Promise.all([
       req.db.query("SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '24h') AS last_24h FROM users"),
       req.db.query(`SELECT COUNT(*) AS total_bets,
                           SUM(bet_amount) AS total_wagered,
@@ -44,7 +44,20 @@ router.get("/stats", async (req, res) => {
                    FROM bets WHERE created_at >= CURRENT_DATE`),
       req.db.query("SELECT currency, SUM(amount) AS total FROM deposits WHERE status = 'confirmed' GROUP BY currency"),
       req.db.query("SELECT COUNT(*) AS pending FROM withdrawals WHERE status = 'pending'"),
+      req.db.query(`SELECT currency, COALESCE(-SUM(profit), 0) AS house_profit
+                   FROM bets
+                   WHERE currency IN ('BTC', 'ETH_POLYGON')
+                   GROUP BY currency`),
+      req.db.query(`SELECT currency, COALESCE(-SUM(profit), 0) AS house_profit
+                   FROM bets
+                   WHERE currency IN ('BTC', 'ETH_POLYGON')
+                     AND created_at >= CURRENT_DATE
+                   GROUP BY currency`),
     ]);
+
+    const pnlByCurrency = { allTime: { BTC: 0, ETH_POLYGON: 0 }, daily: { BTC: 0, ETH_POLYGON: 0 } };
+    for (const row of pnlByCurrencyRes.rows) pnlByCurrency.allTime[row.currency] = parseFloat(row.house_profit || 0);
+    for (const row of dailyPnlByCurrencyRes.rows) pnlByCurrency.daily[row.currency] = parseFloat(row.house_profit || 0);
 
     return res.json({
       users: {
@@ -65,6 +78,7 @@ router.get("/stats", async (req, res) => {
       },
       deposits: depositRes.rows,
       pendingWithdrawals: parseInt(withdrawalRes.rows[0].pending),
+      pnlByCurrency,
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -127,6 +141,10 @@ router.get("/users/:id", async (req, res) => {
       normalizedWallets[normalizedCurrency] += parseFloat(row.balance || 0);
     }
     const wallets = Object.entries(normalizedWallets).map(([currency, balance]) => ({ currency, balance }));
+
+    const pnlByCurrency = { allTime: { BTC: 0, ETH_POLYGON: 0 }, daily: { BTC: 0, ETH_POLYGON: 0 } };
+    for (const row of pnlByCurrencyRes.rows) pnlByCurrency.allTime[row.currency] = parseFloat(row.house_profit || 0);
+    for (const row of dailyPnlByCurrencyRes.rows) pnlByCurrency.daily[row.currency] = parseFloat(row.house_profit || 0);
 
     return res.json({
       user: userRes.rows[0],
@@ -228,6 +246,10 @@ router.put("/users/:id/credit", async (req, res) => {
     if (walletRes.rows.length === 0) {
       return res.status(404).json({ error: `No ${currency} wallet found for user ${req.params.id}` });
     }
+
+    const pnlByCurrency = { allTime: { BTC: 0, ETH_POLYGON: 0 }, daily: { BTC: 0, ETH_POLYGON: 0 } };
+    for (const row of pnlByCurrencyRes.rows) pnlByCurrency.allTime[row.currency] = parseFloat(row.house_profit || 0);
+    for (const row of dailyPnlByCurrencyRes.rows) pnlByCurrency.daily[row.currency] = parseFloat(row.house_profit || 0);
 
     return res.json({
       success: true,

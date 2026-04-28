@@ -89,7 +89,7 @@ router.post("/referral/create", auth, async (req, res) => {
     );
     res.json({ code });
   } catch (err) {
-    if (err.code === "42P01") return res.status(503).json({ error: "Referral system is not initialized yet" });
+    if (err.code === "42P01") return res.json({ code: null, warning: "Referral system is not initialized yet" });
     res.status(400).json({ error: "Unable to create referral code" });
   }
 });

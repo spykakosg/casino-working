@@ -41,8 +41,16 @@ export default function ProfilePage() {
   useEffect(() => { loadAll(); }, []);
 
   async function handleCreateReferral() {
-    const res = await createReferral();
-    setReferral({ ...(referral || {}), code: res.code });
+    try {
+      const res = await createReferral();
+      if (!res.code) {
+        setError(res.warning || "Referral system is not initialized yet");
+        return;
+      }
+      setReferral({ ...(referral || {}), code: res.code });
+    } catch (err) {
+      setError(err.message || "Failed to create referral code");
+    }
   }
 
   async function handleUpdateSeed(currency) {
