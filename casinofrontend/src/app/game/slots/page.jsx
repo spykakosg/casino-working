@@ -89,8 +89,8 @@ function normalizeGrid(rawGrid) {
 }
 
 function renderSymbol(key) {
-  if (key === "btc") return <div className="cf-symbol cf-coin">₿</div>;
-  if (key === "doge") return <div className="cf-symbol cf-coin">D</div>;
+  if (key === "btc") return <div className="cf-symbol cf-symbol-coin">₿</div>;
+  if (key === "doge") return <div className="cf-symbol cf-symbol-coin">D</div>;
   if (key === "eth") return <div className="cf-symbol cf-eth"><div className="cf-eth-icon" /></div>;
   if (key === "sol") {
     return (
@@ -273,7 +273,7 @@ export default function SlotsPage() {
                 <div className="cf-amount">${money(jackpot)}</div>
               </div>
               <div className="cf-panel cf-logo">
-                <div className="cf-coin">₿</div>
+                <div className="cf-logo-coin">₿</div>
                 <div><h1>CRYPTO</h1><p>FORTUNE</p></div>
               </div>
               <div className="cf-panel cf-topmulti cf-cut-right">
@@ -377,7 +377,7 @@ export default function SlotsPage() {
         .cf-jackpot,.cf-topmulti{display:flex;flex-direction:column;justify-content:center;padding:0 clamp(15px,1.6vw,30px)}
         .cf-topmulti{text-align:right;align-items:flex-end}.cf-label{font-size:clamp(12px,1.35vw,24px);font-weight:900;letter-spacing:.08em;color:#ffd45e;text-transform:uppercase}.cf-amount{font-size:clamp(20px,2.6vw,46px);font-weight:900;line-height:1.02;color:#ffd05a;text-shadow:0 0 18px rgba(255,180,0,.9);white-space:nowrap}
         .cf-logo{position:relative;clip-path:polygon(10% 0,90% 0,100% 50%,90% 100%,10% 100%,0 50%);border-color:rgba(0,220,255,.9);background:linear-gradient(180deg,rgba(32,72,135,.9),rgba(7,15,44,.95));display:flex;align-items:center;justify-content:center;text-align:center}
-        .cf-logo .cf-coin{position:absolute;top:-18%;width:clamp(36px,4vw,66px);aspect-ratio:1;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#fff4a4,#f7a100 62%,#6d3200);border:4px solid #3b2200;color:#321700;font-size:clamp(22px,2.8vw,42px);font-weight:900;box-shadow:0 0 22px rgba(255,178,0,.9)}
+        .cf-logo .cf-logo-coin{position:absolute;top:-18%;width:clamp(36px,4vw,66px);aspect-ratio:1;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#fff4a4,#f7a100 62%,#6d3200);border:4px solid #3b2200;color:#321700;font-size:clamp(22px,2.8vw,42px);font-weight:900;box-shadow:0 0 22px rgba(255,178,0,.9)}
         .cf-logo h1{font-size:clamp(34px,5.1vw,84px);line-height:.82;letter-spacing:.055em;background:linear-gradient(#fff,#d8e2ff 34%,#ffc247 70%,#683000);-webkit-background-clip:text;color:transparent;filter:drop-shadow(0 5px 0 rgba(0,0,0,.72))}
         .cf-logo p{margin-top:.28em;font-size:clamp(12px,1.7vw,30px);font-weight:900;letter-spacing:.24em;color:#ffd65e;text-shadow:0 0 12px rgba(255,188,0,.55)}
         .cf-left{display:grid;grid-template-rows:1fr 1fr;border-radius:15px;overflow:hidden}.cf-info{display:flex;align-items:center;justify-content:center;text-align:center;flex-direction:column;border-bottom:1px solid rgba(110,100,255,.35);padding:5px}.cf-info:last-child{border-bottom:0}.cf-purple{color:#e56cff;text-shadow:0 0 16px rgba(229,108,255,.9)}.cf-green{color:#39ffad;text-shadow:0 0 14px rgba(57,255,173,.8)}.cf-info-title{font-size:clamp(10px,1.28vw,22px);font-weight:900;line-height:1.05;text-transform:uppercase}.cf-info-num{font-size:clamp(27px,4.7vw,74px);font-weight:900;line-height:.95;margin-top:.12em}
@@ -387,7 +387,7 @@ export default function SlotsPage() {
         .cf-cell{position:relative;min-width:0;min-height:0;display:grid;place-items:center;overflow:hidden;border-radius:10px;border:1px solid rgba(104,173,255,.45);background:radial-gradient(circle at 50% 42%,rgba(43,75,146,.78),rgba(3,8,28,.96));box-shadow:inset 0 0 22px rgba(0,200,255,.08);perspective:700px}.cf-cell::before{content:"";position:absolute;inset:3px;border-radius:8px;border:1px solid rgba(255,210,95,.18);pointer-events:none}.cf-cell::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 20%,rgba(255,255,255,.08),transparent 55%);pointer-events:none}
         .cf-symbol{width:min(88%,132px);aspect-ratio:1;display:grid;place-items:center;position:relative;transform-style:preserve-3d;animation:cf-idleFloat 2.8s ease-in-out infinite}.cf-cell:nth-child(2n) .cf-symbol{animation-delay:-.7s}.cf-cell:nth-child(3n) .cf-symbol{animation-delay:-1.3s}
         @keyframes cf-idleFloat{50%{transform:translateY(-4%) rotateX(5deg) scale(1.03)}}
-        .cf-coin{border-radius:50%;border:clamp(3px,.38vw,6px) solid #ffd16a;box-shadow:0 0 24px rgba(255,167,0,.82),inset 0 0 20px rgba(255,255,255,.25),inset 0 -9px 14px rgba(0,0,0,.55);background:radial-gradient(circle at 35% 24%,#fff1a2,#ffae10 48%,#8b4200);color:#3a1b00;font-size:clamp(27px,4.4vw,76px);font-weight:900;text-shadow:0 2px rgba(255,255,255,.22)}
+        .cf-symbol-coin{border-radius:50%;border:clamp(3px,.38vw,6px) solid #ffd16a;box-shadow:0 0 24px rgba(255,167,0,.82),inset 0 0 20px rgba(255,255,255,.25),inset 0 -9px 14px rgba(0,0,0,.55);background:radial-gradient(circle at 35% 24%,#fff1a2,#ffae10 48%,#8b4200);color:#3a1b00;font-size:clamp(27px,4.4vw,76px);font-weight:900;text-shadow:0 2px rgba(255,255,255,.22)}
         .cf-eth{border-radius:50%;border:clamp(3px,.38vw,6px) solid #b95cff;background:radial-gradient(circle,rgba(139,84,255,.72),#101133 72%);box-shadow:0 0 24px rgba(184,87,255,.85),inset 0 0 20px rgba(255,255,255,.12)}.cf-eth-icon{width:48%;height:66%;background:linear-gradient(#f6f3ff,#735bff);clip-path:polygon(50% 0,100% 50%,50% 70%,0 50%);filter:drop-shadow(0 0 10px #b69cff)}
         .cf-sol{border-radius:50%;border:clamp(3px,.38vw,6px) solid #25eaff;background:radial-gradient(circle,rgba(0,236,255,.28),#091031 72%);box-shadow:0 0 24px rgba(37,234,255,.78),inset 0 0 20px rgba(255,255,255,.1)}.cf-sol-bars{width:58%;height:42%;position:relative}.cf-sol-bars span{position:absolute;left:0;width:100%;height:24%;border-radius:8px;background:linear-gradient(90deg,#27fff1,#a43cff)}.cf-sol-bars span:nth-child(1){top:0}.cf-sol-bars span:nth-child(2){top:38%;transform:translateX(12%)}.cf-sol-bars span:nth-child(3){bottom:0}
         .cf-xrp{border-radius:50%;border:clamp(3px,.38vw,6px) solid #ff63f3;background:radial-gradient(circle,rgba(255,69,236,.42),#140d31 72%);box-shadow:0 0 24px rgba(255,99,243,.78);color:#ff8cf7;font-size:clamp(30px,4.4vw,76px);font-weight:900}.cf-usdt{border-radius:50%;border:clamp(3px,.38vw,6px) solid #39ffad;background:radial-gradient(circle,rgba(51,255,177,.52),#08291f 72%);box-shadow:0 0 24px rgba(57,255,173,.76);color:white;font-size:clamp(30px,4.4vw,76px);font-weight:900}
