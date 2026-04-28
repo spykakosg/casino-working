@@ -34,8 +34,8 @@ export default function AccountPage() {
       const [b, p, r, stats, s] = await Promise.all([
         getBalances(),
         getProfile(),
-        getMyReferral(),
-        getReferralStats(),
+        getMyReferral().catch(() => ({ referral: null })),
+        getReferralStats().catch(() => ({ code: null, totals: { referees: 0, totalWagered: 0, totalCommission: 0 }, affiliates: [] })),
         getSeeds(),
       ]);
       setBalances(Object.fromEntries(Object.entries(b.balances).map(([k, v]) => [k, v.balance])));

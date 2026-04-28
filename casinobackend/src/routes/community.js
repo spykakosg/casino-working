@@ -16,6 +16,20 @@ async function ensureReferralTable(db) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`
   );
+
+  await db.query(
+    `CREATE TABLE IF NOT EXISTS referral_earnings (
+      id BIGSERIAL PRIMARY KEY,
+      referrer_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      referred_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      currency VARCHAR(20) NOT NULL,
+      game VARCHAR(32) NOT NULL,
+      wager_amount NUMERIC(28, 8) NOT NULL,
+      commission_rate NUMERIC(8, 4) NOT NULL,
+      commission_amount NUMERIC(28, 8) NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`
+  );
 }
 
 router.get("/profile", auth, async (req, res) => {
@@ -182,6 +196,9 @@ router.get("/referral/stats", auth, async (req, res) => {
       })),
     });
   } catch (err) {
+    if (err.code === "42P01") {
+      return res.json({ code: null, totals: { referees: 0, totalWagered: 0, totalCommission: 0 }, affiliates: [] });
+    }
     res.status(500).json({ error: "Failed to load affiliate stats" });
   }
 });
