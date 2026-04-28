@@ -33,7 +33,12 @@ app.use(cors({ origin: process.env.FRONTEND_URL || "*" }));
 app.use(express.json());
 
 // ─── Rate Limiters ────────────────────────────────────────────────────────────
-const authLimiter = rateLimit({ windowMs: 15*60*1000, max: 20, message: { error: "Too many auth attempts" } });
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  skipSuccessfulRequests: true,
+  message: { error: "Too many auth attempts" },
+});
 const betLimiter  = rateLimit({ windowMs: 60*1000,    max: 120, message: { error: "Too many requests" } });
 const genLimiter  = rateLimit({ windowMs: 60*1000,    max: 200, message: { error: "Too many requests" } });
 
