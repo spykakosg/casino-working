@@ -19,27 +19,66 @@
 
 require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env") });
 const { ethers } = require("ethers");
+const bitcoin = require("bitcoinjs-lib");
+const ecc = require("tiny-secp256k1");
+const { BIP32Factory } = require("bip32");
+const bip39 = require("bip39");
 const pool = require("../db/pool");
 
 let hasWarnedInvalidMnemonic = false;
+bitcoin.initEccLib(ecc);
+const bip32 = BIP32Factory(ecc);
+
+function getNormalizedMnemonic() {
+  const raw = (process.env.WALLET_MNEMONIC || "").trim().toLowerCase();
+  if (!raw) return null;
+  if (!bip39.validateMnemonic(raw)) {
+    if (!hasWarnedInvalidMnemonic) {
+      hasWarnedInvalidMnemonic = true;
+      console.warn("⚠️ Invalid WALLET_MNEMONIC. Falling back to demo deposit addresses.");
+    }
+    return null;
+  }
+  return raw;
+}
 
 /**
  * Derive an EVM address (Polygon/ETH) at a given index
  */
 function deriveEVMAddress(index) {
   const fallback = `0xDEMO${String(index).padStart(36, "0")}`;
-  if (!process.env.WALLET_MNEMONIC) return fallback;
+  const mnemonic = getNormalizedMnemonic();
+  if (!mnemonic) return fallback;
 
   try {
-    const phrase = process.env.WALLET_MNEMONIC.trim().toLowerCase();
     const path = `m/44'/60'/0'/0/${index}`;
-    const hdNode = ethers.HDNodeWallet.fromPhrase(phrase, undefined, path);
+    const hdNode = ethers.HDNodeWallet.fromPhrase(mnemonic, undefined, path);
     return hdNode.address;
   } catch (err) {
     if (!hasWarnedInvalidMnemonic) {
       hasWarnedInvalidMnemonic = true;
       console.warn("⚠️ Invalid WALLET_MNEMONIC. Falling back to demo deposit addresses.", err.message);
     }
+    return fallback;
+  }
+}
+
+function deriveBTCAddress(index) {
+  const fallback = `bc1q_placeholder_${index}`;
+  const mnemonic = getNormalizedMnemonic();
+  if (!mnemonic) return fallback;
+
+  try {
+    const seed = bip39.mnemonicToSeedSync(mnemonic);
+    const root = bip32.fromSeed(seed, bitcoin.networks.bitcoin);
+    const child = root.derivePath(`m/84'/0'/0'/0/${index}`);
+    const payment = bitcoin.payments.p2wpkh({
+      pubkey: Buffer.from(child.publicKey),
+      network: bitcoin.networks.bitcoin,
+    });
+    return payment.address || fallback;
+  } catch (err) {
+    console.warn("⚠️ BTC derivation failed. Falling back to placeholder address.", err.message);
     return fallback;
   }
 }
@@ -59,7 +98,8 @@ async function generateAddressForUser(userId) {
     const currencies = [
       { currency: "ETH_POLYGON", address: deriveEVMAddress(index) },
       { currency: "USDT", address: deriveEVMAddress(index) }, // same address, different token
-      { currency: "BTC", address: `bc1q_placeholder_${index}` }, // integrate bitcoinjs-lib for real BTC
+      { currency: "USDT_POLYGON", address: deriveEVMAddress(index) },
+      { currency: "BTC", address: deriveBTCAddress(index) },
     ];
 
     for (const { currency, address } of currencies) {
