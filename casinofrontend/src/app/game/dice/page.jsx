@@ -27,6 +27,21 @@ export default function DicePage() {
   const [history, setHistory]         = useState([]);
   const [historyPage, setHistoryPage] = useState(0);
 
+
+  const playTone = useCallback((won) => {
+    if (typeof window === "undefined") return;
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    oscillator.type = "sine";
+    oscillator.frequency.value = won ? 880 : 220;
+    gain.gain.value = 0.06;
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.start();
+    oscillator.stop(ctx.currentTime + 0.12);
+  }, []);
+
   // Derived
   const winProbability = direction === "under" ? target : 100 - target;
   const multiplier     = winProbability > 0 ? ((99 / winProbability)).toFixed(4) : "0";
@@ -75,6 +90,7 @@ export default function DicePage() {
       setResult(data);
       setBalances(prev => ({ ...prev, [currency]: data.balance }));
       setHistory(prev => [data.bet, ...prev]);
+      playTone(Boolean(data?.bet?.won));
     } catch (err) {
       setError(err.message);
     } finally {

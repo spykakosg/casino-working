@@ -159,3 +159,46 @@ CREATE TRIGGER trg_users_updated_at
 CREATE TRIGGER trg_wallets_updated_at
   BEFORE UPDATE ON wallets
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================================
+-- SECURITY / ACCOUNT RECOVERY / REFERRALS
+-- ============================================================
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by_code TEXT;
+
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+  id          BIGSERIAL PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token       TEXT UNIQUE NOT NULL,
+  used_at     TIMESTAMPTZ,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id          BIGSERIAL PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token       TEXT UNIQUE NOT NULL,
+  used_at     TIMESTAMPTZ,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS referral_codes (
+  id            BIGSERIAL PRIMARY KEY,
+  user_id        INTEGER UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code           VARCHAR(32) UNIQUE NOT NULL,
+  uses_count      INTEGER NOT NULL DEFAULT 0,
+  bonus_credits   NUMERIC(28, 8) NOT NULL DEFAULT 0,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id          BIGSERIAL PRIMARY KEY,
+  user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  ip_address  INET,
+  user_agent  TEXT,
+  route       TEXT NOT NULL,
+  method      VARCHAR(10) NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

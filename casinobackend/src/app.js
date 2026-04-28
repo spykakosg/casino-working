@@ -17,6 +17,8 @@ const adminRouter  = require("./routes/admin");
 const { router: crashRouter, initCrash } = require("./routes/crash");
 const blackjackRouter = require("./routes/blackjack");
 const minesRouter = require("./routes/mines");
+const communityRouter = require("./routes/community");
+const accountRouter = require("./routes/account");
 
 const app    = express();
 const server = http.createServer(app);
@@ -43,6 +45,9 @@ app.use("/api/admin",  genLimiter,  adminRouter);
 app.use("/api/crash",  genLimiter,  crashRouter);
 app.use("/api/blackjack", betLimiter, blackjackRouter);
 app.use("/api/mines", betLimiter, minesRouter);
+app.use("/api/community", genLimiter, communityRouter);
+app.use("/api/account", authLimiter, accountRouter);
+
 
 // ─── Prices (cached, for max bet conversion) ─────────────────────────────────
 let priceCache = { btc: 0, eth: 0, updatedAt: 0 };

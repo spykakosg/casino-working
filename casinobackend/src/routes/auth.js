@@ -37,7 +37,7 @@ function signToken(user) {
 
 // ─── Register ─────────────────────────────────────────────────────────────────
 router.post("/register", async (req, res) => {
-  const { username, email, password } = req.body;
+  const { username, email, password, referralCode } = req.body;
 
   if (!username || !password) {
     return res.status(400).json({ error: "username and password are required" });
@@ -70,14 +70,38 @@ router.post("/register", async (req, res) => {
 
     // Create user
     const userRes = await client.query(
-      `INSERT INTO users (username, email, password_hash)
-       VALUES ($1, $2, $3)
+      `INSERT INTO users (username, email, password_hash, referred_by_code)
+       VALUES ($1, $2, $3, $4)
        RETURNING id, username, email, role, created_at`,
-      [username.toLowerCase(), email || null, passwordHash]
+      [username.toLowerCase(), email || null, passwordHash, referralCode || null]
     );
     const user = userRes.rows[0];
 
     // Create a wallet for each supported currency
+
+    if (referralCode) {
+      const refRes = await client.query(
+        `UPDATE referral_codes
+         SET uses_count = uses_count + 1, bonus_credits = bonus_credits + 5
+         WHERE code = $1
+         RETURNING user_id`,
+        [referralCode]
+      );
+      if (refRes.rows[0]) {
+        await client.query(
+          `UPDATE wallets
+           SET balance = balance + 5
+           WHERE user_id = $1 AND currency = 'USDT'`,
+          [refRes.rows[0].user_id]
+        );
+        await client.query(
+          `UPDATE wallets
+           SET balance = balance + 2
+           WHERE user_id = $1 AND currency = 'USDT'`,
+          [user.id]
+        );
+      }
+    }
     for (const currency of SUPPORTED_CURRENCIES) {
       const serverSeed = generateServerSeed();
       const clientSeed = generateClientSeed();
@@ -89,6 +113,14 @@ router.post("/register", async (req, res) => {
     }
 
     await client.query("COMMIT");
+
+    const ipAddress = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || null;
+    const userAgent = req.headers["user-agent"] || null;
+    await req.db.query(
+      `INSERT INTO sessions (user_id, ip_address, user_agent, expires_at)
+       VALUES ($1, $2, $3, NOW() + INTERVAL '7 day')`,
+      [user.id, ipAddress, userAgent]
+    );
 
     const token = signToken(user);
     return res.status(201).json({

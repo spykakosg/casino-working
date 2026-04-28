@@ -11,6 +11,7 @@
 const express = require("express");
 const router = express.Router();
 const auth = require("../middleware/auth");
+const { generateAddressForUser } = require("../services/addressGenerator");
 
 const SUPPORTED_CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
 
@@ -102,6 +103,26 @@ router.get("/deposit/:currency", auth, async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ error: "Failed to fetch deposit address" });
+  }
+});
+
+
+// ─── Generate Deposit Address (on-demand) ───────────────────────────────────
+router.post("/deposit/:currency/generate", auth, async (req, res) => {
+  const { currency } = req.params;
+  if (!SUPPORTED_CURRENCIES.includes(currency)) {
+    return res.status(400).json({ error: "Unsupported currency" });
+  }
+
+  try {
+    await generateAddressForUser(req.user.id);
+    const addrRes = await req.db.query(
+      `SELECT deposit_address FROM wallets WHERE user_id = $1 AND currency = ANY($2::text[]) LIMIT 1`,
+      [req.user.id, getWalletCurrencyCandidates(currency)]
+    );
+    return res.json({ success: true, currency, address: addrRes.rows[0]?.deposit_address || null });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to generate deposit address" });
   }
 });
 

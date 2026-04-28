@@ -21,17 +21,12 @@ require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env"
 const { ethers } = require("ethers");
 const pool = require("../db/pool");
 
-if (!process.env.WALLET_MNEMONIC) {
-  console.error("❌  WALLET_MNEMONIC not set in .env");
-  process.exit(1);
-}
-
-const masterWallet = ethers.Wallet.fromPhrase(process.env.WALLET_MNEMONIC);
 
 /**
  * Derive an EVM address (Polygon/ETH) at a given index
  */
 function deriveEVMAddress(index) {
+  if (!process.env.WALLET_MNEMONIC) return `0xDEMO${String(index).padStart(36, "0")}`;
   const path = `m/44'/60'/0'/0/${index}`;
   const hdNode = ethers.HDNodeWallet.fromPhrase(process.env.WALLET_MNEMONIC, undefined, path);
   return hdNode.address;
