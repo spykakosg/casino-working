@@ -20,6 +20,30 @@ const { resolveLimboBet, validateLimboBet } = require("../games/limbo");
 const { resolveSlotsBet, validateSlotsBet } = require("../games/slots");
 const { rotateSeed, hashServerSeed } = require("./rng");
 
+function getWalletCurrencyCandidates(currency) {
+  return currency === "USDT" ? ["USDT", "USDT_POLYGON", "USDT_TRON"] : [currency];
+}
+
+async function getLockedWallet(client, userId, currency) {
+  const candidates = getWalletCurrencyCandidates(currency);
+  const walletRes = await client.query(
+    `SELECT id, balance, server_seed, client_seed, nonce, currency
+     FROM wallets
+     WHERE user_id = $1
+       AND currency = ANY($2::text[])
+     ORDER BY CASE
+       WHEN currency = 'USDT' THEN 0
+       WHEN currency = 'USDT_POLYGON' THEN 1
+       WHEN currency = 'USDT_TRON' THEN 2
+       ELSE 3
+     END
+     LIMIT 1
+     FOR UPDATE`,
+    [userId, candidates]
+  );
+  return walletRes.rows[0] || null;
+}
+
 /**
  * Place a dice bet
  *
@@ -40,19 +64,10 @@ async function placeDiceBet(db, { userId, currency, betAmount, target, direction
     await client.query("BEGIN");
 
     // 1. Lock the user's wallet row and read balance
-    const walletRes = await client.query(
-      `SELECT id, balance, server_seed, client_seed, nonce
-       FROM wallets
-       WHERE user_id = $1 AND currency = $2
-       FOR UPDATE`,
-      [userId, currency]
-    );
-
-    if (walletRes.rows.length === 0) {
+    const wallet = await getLockedWallet(client, userId, currency);
+    if (!wallet) {
       throw new Error(`No ${currency} wallet found for user`);
     }
-
-    const wallet = walletRes.rows[0];
     const balance = parseFloat(wallet.balance);
 
     // 2. Validate the bet
@@ -149,14 +164,9 @@ async function rotateServerSeed(db, userId, currency) {
   try {
     await client.query("BEGIN");
 
-    const walletRes = await client.query(
-      `SELECT id, server_seed FROM wallets WHERE user_id = $1 AND currency = $2 FOR UPDATE`,
-      [userId, currency]
-    );
-
-    if (walletRes.rows.length === 0) throw new Error("Wallet not found");
-
-    const { id, server_seed } = walletRes.rows[0];
+    const wallet = await getLockedWallet(client, userId, currency);
+    if (!wallet) throw new Error("Wallet not found");
+    const { id, server_seed } = wallet;
     const { revealedSeed, newServerSeed, newHashedSeed } = rotateSeed(server_seed);
 
     await client.query(
@@ -203,12 +213,8 @@ async function placeRouletteBet(db, { userId, currency, betAmount, betType, betV
   const client = await db.connect();
   try {
     await client.query("BEGIN");
-    const walletRes = await client.query(
-      `SELECT id, balance, server_seed, client_seed, nonce FROM wallets WHERE user_id = $1 AND currency = $2 FOR UPDATE`,
-      [userId, currency]
-    );
-    if (walletRes.rows.length === 0) throw new Error(`No ${currency} wallet found for user`);
-    const wallet = walletRes.rows[0];
+    const wallet = await getLockedWallet(client, userId, currency);
+    if (!wallet) throw new Error(`No ${currency} wallet found for user`);
     const balance = parseFloat(wallet.balance);
 
     const validation = validateRouletteBet({ betAmount, betType, betValue, balance, currency });
@@ -245,12 +251,8 @@ async function placeBlackjackBet(db, { userId, currency, betAmount, actions }) {
   const client = await db.connect();
   try {
     await client.query("BEGIN");
-    const walletRes = await client.query(
-      `SELECT id, balance, server_seed, client_seed, nonce FROM wallets WHERE user_id = $1 AND currency = $2 FOR UPDATE`,
-      [userId, currency]
-    );
-    if (walletRes.rows.length === 0) throw new Error(`No ${currency} wallet found for user`);
-    const wallet = walletRes.rows[0];
+    const wallet = await getLockedWallet(client, userId, currency);
+    if (!wallet) throw new Error(`No ${currency} wallet found for user`);
     const balance = parseFloat(wallet.balance);
 
     const validation = validateBlackjackBet({ betAmount, balance, currency });
@@ -292,12 +294,8 @@ async function placePlinkoBet(db, { userId, currency, betAmount, rows, risk }) {
   const client = await db.connect();
   try {
     await client.query("BEGIN");
-    const walletRes = await client.query(
-      `SELECT id, balance, server_seed, client_seed, nonce FROM wallets WHERE user_id = $1 AND currency = $2 FOR UPDATE`,
-      [userId, currency]
-    );
-    if (walletRes.rows.length === 0) throw new Error(`No ${currency} wallet found for user`);
-    const wallet = walletRes.rows[0];
+    const wallet = await getLockedWallet(client, userId, currency);
+    if (!wallet) throw new Error(`No ${currency} wallet found for user`);
     const balance = parseFloat(wallet.balance);
 
     const validation = validatePlinkoBet({ betAmount, rows, risk, balance, currency });
@@ -334,12 +332,8 @@ async function placeLimboBet(db, { userId, currency, betAmount, target }) {
   const client = await db.connect();
   try {
     await client.query("BEGIN");
-    const walletRes = await client.query(
-      `SELECT id, balance, server_seed, client_seed, nonce FROM wallets WHERE user_id = $1 AND currency = $2 FOR UPDATE`,
-      [userId, currency]
-    );
-    if (walletRes.rows.length === 0) throw new Error(`No ${currency} wallet found`);
-    const wallet = walletRes.rows[0];
+    const wallet = await getLockedWallet(client, userId, currency);
+    if (!wallet) throw new Error(`No ${currency} wallet found`);
     const balance = parseFloat(wallet.balance);
 
     const validation = validateLimboBet({ betAmount, target, balance, currency });
@@ -376,12 +370,8 @@ async function placeSlotsBet(db, { userId, currency, betAmount }) {
   const client = await db.connect();
   try {
     await client.query("BEGIN");
-    const walletRes = await client.query(
-      `SELECT id, balance, server_seed, client_seed, nonce FROM wallets WHERE user_id = $1 AND currency = $2 FOR UPDATE`,
-      [userId, currency]
-    );
-    if (walletRes.rows.length === 0) throw new Error(`No ${currency} wallet found`);
-    const wallet = walletRes.rows[0];
+    const wallet = await getLockedWallet(client, userId, currency);
+    if (!wallet) throw new Error(`No ${currency} wallet found`);
     const balance = parseFloat(wallet.balance);
 
     const validation = validateSlotsBet({ betAmount, balance, currency });

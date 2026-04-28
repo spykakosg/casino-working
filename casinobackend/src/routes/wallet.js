@@ -20,6 +20,10 @@ const CURRENCY_INFO = {
   BTC:          { name: "BTC",  network: "Bitcoin", minWithdraw: 0.0001, fee: 0.00005 },
 };
 
+function getWalletCurrencyCandidates(currency) {
+  return currency === "USDT" ? ["USDT", "USDT_POLYGON", "USDT_TRON"] : [currency];
+}
+
 // ─── Get All Balances ─────────────────────────────────────────────────────────
 router.get("/balances", auth, async (req, res) => {
   try {
@@ -29,11 +33,21 @@ router.get("/balances", auth, async (req, res) => {
     );
     const balances = {};
     for (const row of result.rows) {
-      balances[row.currency] = {
-        balance: parseFloat(row.balance),
-        depositAddress: row.deposit_address,
-        ...CURRENCY_INFO[row.currency],
-      };
+      const normalizedCurrency = ["USDT", "USDT_POLYGON", "USDT_TRON"].includes(row.currency)
+        ? "USDT"
+        : row.currency;
+      if (!CURRENCY_INFO[normalizedCurrency]) continue;
+      if (!balances[normalizedCurrency]) {
+        balances[normalizedCurrency] = {
+          balance: 0,
+          depositAddress: row.deposit_address,
+          ...CURRENCY_INFO[normalizedCurrency],
+        };
+      }
+      balances[normalizedCurrency].balance += parseFloat(row.balance);
+      if (!balances[normalizedCurrency].depositAddress && row.deposit_address) {
+        balances[normalizedCurrency].depositAddress = row.deposit_address;
+      }
     }
     return res.json({ balances });
   } catch (err) {
@@ -51,8 +65,18 @@ router.get("/deposit/:currency", auth, async (req, res) => {
 
   try {
     const result = await req.db.query(
-      "SELECT deposit_address FROM wallets WHERE user_id = $1 AND currency = $2",
-      [req.user.id, currency]
+      `SELECT deposit_address
+       FROM wallets
+       WHERE user_id = $1
+         AND currency = ANY($2::text[])
+       ORDER BY CASE
+         WHEN currency = 'USDT' THEN 0
+         WHEN currency = 'USDT_POLYGON' THEN 1
+         WHEN currency = 'USDT_TRON' THEN 2
+         ELSE 3
+       END
+       LIMIT 1`,
+      [req.user.id, getWalletCurrencyCandidates(currency)]
     );
 
     if (result.rows.length === 0) {
@@ -129,8 +153,19 @@ router.post("/withdraw", auth, async (req, res) => {
 
     // Lock wallet and check balance
     const walletRes = await client.query(
-      "SELECT id, balance FROM wallets WHERE user_id = $1 AND currency = $2 FOR UPDATE",
-      [req.user.id, currency]
+      `SELECT id, balance
+       FROM wallets
+       WHERE user_id = $1
+         AND currency = ANY($2::text[])
+       ORDER BY CASE
+         WHEN currency = 'USDT' THEN 0
+         WHEN currency = 'USDT_POLYGON' THEN 1
+         WHEN currency = 'USDT_TRON' THEN 2
+         ELSE 3
+       END
+       LIMIT 1
+       FOR UPDATE`,
+      [req.user.id, getWalletCurrencyCandidates(currency)]
     );
 
     if (walletRes.rows.length === 0) {

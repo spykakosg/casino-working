@@ -46,8 +46,12 @@ function BetRow({ bet }) {
   const isWin = profit > 0.0001;
   const ccy = bet.currency || "";
   const isCrypto = ccy === "BTC" || ccy === "ETH_POLYGON";
-  const dec = isCrypto ? 10 : 5;
-  function fmt(v) { return v.toFixed(dec); }
+  function fmt(v) {
+    if (!Number.isFinite(v)) return "0";
+    const abs = Math.abs(v);
+    const dec = isCrypto || (abs > 0 && abs < 1) ? 8 : 5;
+    return v.toFixed(dec).replace(/\.?0+$/, "");
+  }
   return (
     <div className={`px-4 py-3 flex items-center gap-3 hover:bg-casino-surface/50 transition-colors ${
       isWin ? "border-l-2 border-green-500/40" : isPush ? "border-l-2 border-yellow-500/30" : "border-l-2 border-red-500/20"
