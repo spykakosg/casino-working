@@ -85,9 +85,25 @@ async function backfillAddresses() {
   process.exit(0);
 }
 
+/**
+ * Ensure all users with missing wallet addresses get assigned.
+ * Safe to run on startup of background services.
+ */
+async function ensureAllDepositAddresses() {
+  const result = await pool.query(
+    `SELECT DISTINCT user_id FROM wallets WHERE deposit_address IS NULL`
+  );
+
+  for (const row of result.rows) {
+    await generateAddressForUser(row.user_id);
+  }
+
+  return result.rows.length;
+}
+
 // Run if called directly
 if (require.main === module) {
   backfillAddresses().catch(console.error);
 }
 
-module.exports = { generateAddressForUser, deriveEVMAddress };
+module.exports = { generateAddressForUser, deriveEVMAddress, ensureAllDepositAddresses };

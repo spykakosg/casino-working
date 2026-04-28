@@ -102,13 +102,30 @@ router.get("/deposit/:currency", auth, async (req, res) => {
       return res.status(404).json({ error: "Wallet not found" });
     }
 
-    const address = result.rows[0].deposit_address;
+    let address = result.rows[0].deposit_address;
+    if (!address) {
+      await generateAddressForUser(req.user.id);
+      const refreshRes = await req.db.query(
+        `SELECT deposit_address
+         FROM wallets
+         WHERE user_id = $1
+           AND currency = ANY($2::text[])
+         ORDER BY CASE
+           WHEN currency = 'USDT' THEN 0
+           WHEN currency = 'USDT_POLYGON' THEN 1
+           WHEN currency = 'USDT_TRON' THEN 2
+           ELSE 3
+         END
+         LIMIT 1`,
+        [req.user.id, getWalletCurrencyCandidates(currency)]
+      );
+      address = refreshRes.rows[0]?.deposit_address || null;
+    }
 
     if (!address) {
-      // Address not yet generated — this will be populated by the deposit watcher service
       return res.status(503).json({
         error: "Deposit address not yet assigned. Please try again in a moment.",
-        hint: "The deposit watcher service needs to be running to assign addresses.",
+        hint: "Address generation failed. Check backend logs and wallet configuration.",
       });
     }
 

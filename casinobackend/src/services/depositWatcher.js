@@ -15,6 +15,7 @@
 require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env") });
 const { ethers } = require("ethers");
 const pool = require("../db/pool");
+const { ensureAllDepositAddresses } = require("./addressGenerator");
 
 const CONFIRMATIONS_REQUIRED = {
   USDT: 2,
@@ -169,6 +170,10 @@ async function creditDeposit(userId, currency, amount, txHash, fromAddress, toAd
 // ─── Start All Watchers ───────────────────────────────────────────────────────
 async function start() {
   console.log("🔍 Starting deposit watcher service...");
+  const assigned = await ensureAllDepositAddresses();
+  if (assigned > 0) {
+    console.log(`🏷️  Assigned missing deposit addresses for ${assigned} user(s)`);
+  }
   await Promise.all([
     watchPolygon(),
     watchBitcoin(),
