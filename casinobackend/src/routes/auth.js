@@ -18,6 +18,9 @@ const auth = require("../middleware/auth");
 
 const SUPPORTED_CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
 const SALT_ROUNDS = 12;
+const FAILED_LOGIN_LIMIT = 10;
+const FAILED_LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const failedLoginAttempts = new Map();
 
 function normalizeCurrency(currency) {
   return ["USDT", "USDT_POLYGON", "USDT_TRON"].includes(currency) ? "USDT" : currency;
@@ -79,29 +82,6 @@ router.post("/register", async (req, res) => {
 
     // Create a wallet for each supported currency
 
-    if (referralCode) {
-      const refRes = await client.query(
-        `UPDATE referral_codes
-         SET uses_count = uses_count + 1, bonus_credits = bonus_credits + 5
-         WHERE code = $1
-         RETURNING user_id`,
-        [referralCode]
-      );
-      if (refRes.rows[0]) {
-        await client.query(
-          `UPDATE wallets
-           SET balance = balance + 5
-           WHERE user_id = $1 AND currency = 'USDT'`,
-          [refRes.rows[0].user_id]
-        );
-        await client.query(
-          `UPDATE wallets
-           SET balance = balance + 2
-           WHERE user_id = $1 AND currency = 'USDT'`,
-          [user.id]
-        );
-      }
-    }
     for (const currency of SUPPORTED_CURRENCIES) {
       const serverSeed = generateServerSeed();
       const clientSeed = generateClientSeed();
@@ -121,6 +101,7 @@ router.post("/register", async (req, res) => {
        VALUES ($1, $2, $3, NOW() + INTERVAL '7 day')`,
       [user.id, ipAddress, userAgent]
     );
+
 
     const token = signToken(user);
     return res.status(201).json({
@@ -142,6 +123,23 @@ router.post("/register", async (req, res) => {
   }
 });
 
+
+function getLoginAttemptKey(username, req) {
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "unknown";
+  return `${username.toLowerCase()}::${ip}`;
+}
+
+function getAttemptsRecord(key) {
+  const now = Date.now();
+  const rec = failedLoginAttempts.get(key);
+  if (!rec || now - rec.firstAt > FAILED_LOGIN_WINDOW_MS) {
+    const fresh = { count: 0, firstAt: now };
+    failedLoginAttempts.set(key, fresh);
+    return fresh;
+  }
+  return rec;
+}
+
 // ─── Login ────────────────────────────────────────────────────────────────────
 router.post("/login", async (req, res) => {
   const { username, password } = req.body;
@@ -151,12 +149,19 @@ router.post("/login", async (req, res) => {
   }
 
   try {
+    const attemptKey = getLoginAttemptKey(username, req);
+    const attempts = getAttemptsRecord(attemptKey);
+    if (attempts.count >= FAILED_LOGIN_LIMIT) {
+      return res.status(429).json({ error: "Too many failed login attempts. Try again in 15 minutes." });
+    }
+
     const userRes = await req.db.query(
       "SELECT id, username, email, password_hash, role, is_banned FROM users WHERE username = $1",
       [username.toLowerCase()]
     );
 
     if (userRes.rows.length === 0) {
+      attempts.count += 1;
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
@@ -168,8 +173,12 @@ router.post("/login", async (req, res) => {
 
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) {
+      attempts.count += 1;
       return res.status(401).json({ error: "Invalid credentials" });
     }
+
+    failedLoginAttempts.delete(attemptKey);
+
 
     const token = signToken(user);
     return res.json({

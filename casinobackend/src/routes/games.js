@@ -19,8 +19,26 @@ const { rollDice, hashServerSeed } = require("../engine/rng");
 const auth = require("../middleware/auth");
 const { validateMaxBet } = require("../engine/maxBet");
 
+
+const userBetWindows = new Map();
+function enforceUserBetVelocity(req, res, next) {
+  if (!req.user?.id) return next();
+  const key = `${req.user.id}`;
+  const now = Date.now();
+  const windowMs = 60 * 1000;
+  const max = 40;
+  const arr = userBetWindows.get(key) || [];
+  const filtered = arr.filter((t) => now - t < windowMs);
+  if (filtered.length >= max) {
+    return res.status(429).json({ error: "Too many bets for this account. Please slow down." });
+  }
+  filtered.push(now);
+  userBetWindows.set(key, filtered);
+  next();
+}
+
 // ─── Dice: Place Bet ──────────────────────────────────────────────────────────
-router.post("/dice/bet", auth, async (req, res) => {
+router.post("/dice/bet", auth, enforceUserBetVelocity, async (req, res) => {
   const { currency, betAmount, target, direction } = req.body;
   const userId = req.user.id;
 
@@ -122,7 +140,7 @@ router.post("/dice/seed", auth, async (req, res) => {
 });
 
 // ─── Roulette: Place Bet ──────────────────────────────────────────────────────
-router.post("/roulette/bet", auth, async (req, res) => {
+router.post("/roulette/bet", auth, enforceUserBetVelocity, async (req, res) => {
   const { currency, betAmount, betType, betValue } = req.body;
 
   if (!currency || !betAmount || !betType) {
@@ -159,7 +177,7 @@ router.get("/roulette/info", (_req, res) => {
 });
 
 // ─── Plinko: Place Bet ────────────────────────────────────────────────────────
-router.post("/plinko/bet", auth, async (req, res) => {
+router.post("/plinko/bet", auth, enforceUserBetVelocity, async (req, res) => {
   const { currency, betAmount, rows, risk } = req.body;
 
   if (!currency || !betAmount || !rows || !risk) {
@@ -195,7 +213,7 @@ router.get("/plinko/info", (_req, res) => {
 });
 
 // ─── Limbo: Place Bet ─────────────────────────────────────────────────────────
-router.post("/limbo/bet", auth, async (req, res) => {
+router.post("/limbo/bet", auth, enforceUserBetVelocity, async (req, res) => {
   const { currency, betAmount, target } = req.body;
 
   if (!currency || !betAmount || !target) {
@@ -228,7 +246,7 @@ router.post("/limbo/bet", auth, async (req, res) => {
 });
 
 // ─── Slots: Place Bet ─────────────────────────────────────────────────────────
-router.post("/slots/bet", auth, async (req, res) => {
+router.post("/slots/bet", auth, enforceUserBetVelocity, async (req, res) => {
   const { currency, betAmount } = req.body;
 
   if (!currency || !betAmount) {

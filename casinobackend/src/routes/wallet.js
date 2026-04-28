@@ -25,6 +25,24 @@ function getWalletCurrencyCandidates(currency) {
   return currency === "USDT" ? ["USDT", "USDT_POLYGON", "USDT_TRON"] : [currency];
 }
 
+
+const withdrawalVelocity = new Map();
+function enforceWithdrawalVelocity(req, res, next) {
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "unknown";
+  const key = `${req.user?.id || "anon"}::${ip}`;
+  const now = Date.now();
+  const windowMs = 60 * 60 * 1000;
+  const max = 5;
+  const arr = withdrawalVelocity.get(key) || [];
+  const filtered = arr.filter((t) => now - t < windowMs);
+  if (filtered.length >= max) {
+    return res.status(429).json({ error: "Too many withdrawal attempts. Try again later." });
+  }
+  filtered.push(now);
+  withdrawalVelocity.set(key, filtered);
+  next();
+}
+
 // ─── Get All Balances ─────────────────────────────────────────────────────────
 router.get("/balances", auth, async (req, res) => {
   try {
@@ -145,7 +163,7 @@ router.get("/deposits", auth, async (req, res) => {
 });
 
 // ─── Request Withdrawal ───────────────────────────────────────────────────────
-router.post("/withdraw", auth, async (req, res) => {
+router.post("/withdraw", auth, enforceWithdrawalVelocity, async (req, res) => {
   const { currency, amount, toAddress } = req.body;
 
   if (!currency || !amount || !toAddress) {

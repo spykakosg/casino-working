@@ -202,3 +202,18 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   method      VARCHAR(10) NOT NULL,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS referral_earnings (
+  id                BIGSERIAL PRIMARY KEY,
+  referrer_user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  referred_user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  currency          VARCHAR(20) NOT NULL,
+  game              VARCHAR(32) NOT NULL,
+  wager_amount      NUMERIC(28, 8) NOT NULL,
+  commission_rate   NUMERIC(8, 4) NOT NULL,
+  commission_amount NUMERIC(28, 8) NOT NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_referral_earnings_referrer ON referral_earnings(referrer_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_referral_earnings_referred ON referral_earnings(referred_user_id, created_at DESC);

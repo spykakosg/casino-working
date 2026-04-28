@@ -177,6 +177,33 @@ function StatsPanel() {
         </div>
       </div>
 
+
+      <div className="bg-casino-card border border-casino-border rounded-xl p-4">
+        <h3 className="text-sm font-mono text-casino-muted uppercase tracking-widest mb-3">Reconciliation</h3>
+        <div className="space-y-2 mb-4">
+          {(stats.reconciliation?.byGame || []).map((g) => (
+            <div key={g.game} className="bg-casino-surface rounded-lg p-3 grid grid-cols-2 md:grid-cols-5 gap-2 text-xs font-mono">
+              <div><span className="text-casino-muted">Game</span><div>{g.game}</div></div>
+              <div><span className="text-casino-muted">Wagered</span><div>{g.wagered.toFixed(4)}</div></div>
+              <div><span className="text-casino-muted">Payout</span><div>{g.payout.toFixed(4)}</div></div>
+              <div><span className="text-casino-muted">House PnL</span><div className={g.houseProfit >= 0 ? "text-green-400" : "text-red-400"}>{g.houseProfit.toFixed(4)}</div></div>
+              <div><span className="text-casino-muted">Edge %</span><div>{g.edgePct.toFixed(2)}%</div></div>
+            </div>
+          ))}
+        </div>
+        <div>
+          <h4 className="text-xs font-mono text-casino-muted mb-2">Last 7 days wager vs payout</h4>
+          <div className="space-y-1">
+            {(stats.reconciliation?.payoutTrend || []).map((d) => (
+              <div key={d.day} className="text-xs font-mono flex justify-between bg-casino-surface rounded px-2 py-1">
+                <span>{d.day}</span>
+                <span>W: {d.wagered.toFixed(2)} / P: {d.payout.toFixed(2)} / H: {d.houseProfit.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* Deposits by currency */}
       {stats.deposits.length > 0 && (
         <div className="bg-casino-card border border-casino-border rounded-xl p-4">
