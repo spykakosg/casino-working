@@ -21,15 +21,27 @@ require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env"
 const { ethers } = require("ethers");
 const pool = require("../db/pool");
 
+let hasWarnedInvalidMnemonic = false;
 
 /**
  * Derive an EVM address (Polygon/ETH) at a given index
  */
 function deriveEVMAddress(index) {
-  if (!process.env.WALLET_MNEMONIC) return `0xDEMO${String(index).padStart(36, "0")}`;
-  const path = `m/44'/60'/0'/0/${index}`;
-  const hdNode = ethers.HDNodeWallet.fromPhrase(process.env.WALLET_MNEMONIC, undefined, path);
-  return hdNode.address;
+  const fallback = `0xDEMO${String(index).padStart(36, "0")}`;
+  if (!process.env.WALLET_MNEMONIC) return fallback;
+
+  try {
+    const phrase = process.env.WALLET_MNEMONIC.trim().toLowerCase();
+    const path = `m/44'/60'/0'/0/${index}`;
+    const hdNode = ethers.HDNodeWallet.fromPhrase(phrase, undefined, path);
+    return hdNode.address;
+  } catch (err) {
+    if (!hasWarnedInvalidMnemonic) {
+      hasWarnedInvalidMnemonic = true;
+      console.warn("⚠️ Invalid WALLET_MNEMONIC. Falling back to demo deposit addresses.", err.message);
+    }
+    return fallback;
+  }
 }
 
 /**
