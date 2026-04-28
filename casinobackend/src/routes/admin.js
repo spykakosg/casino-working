@@ -118,9 +118,19 @@ router.get("/users/:id", async (req, res) => {
 
     if (userRes.rows.length === 0) return res.status(404).json({ error: "User not found" });
 
+    const normalizedWallets = {};
+    for (const row of walletsRes.rows) {
+      const normalizedCurrency = ["USDT", "USDT_POLYGON", "USDT_TRON"].includes(row.currency)
+        ? "USDT"
+        : row.currency;
+      if (!normalizedWallets[normalizedCurrency]) normalizedWallets[normalizedCurrency] = 0;
+      normalizedWallets[normalizedCurrency] += parseFloat(row.balance || 0);
+    }
+    const wallets = Object.entries(normalizedWallets).map(([currency, balance]) => ({ currency, balance }));
+
     return res.json({
       user: userRes.rows[0],
-      wallets: walletsRes.rows,
+      wallets,
       stats: betsRes.rows[0],
     });
   } catch (err) {
@@ -144,17 +154,37 @@ router.put("/users/:id/ban", async (req, res) => {
 
 // ─── Delete User ──────────────────────────────────────────────────────────────
 router.delete("/users/:id", async (req, res) => {
+  const client = await req.db.connect();
   try {
-    const result = await req.db.query(
-      "DELETE FROM users WHERE id = $1 AND role <> 'admin' RETURNING id, username",
+    await client.query("BEGIN");
+
+    const userRes = await client.query(
+      "SELECT id, username, role FROM users WHERE id = $1 FOR UPDATE",
       [req.params.id]
     );
-    if (result.rows.length === 0) {
+    if (userRes.rows.length === 0 || userRes.rows[0].role === "admin") {
+      await client.query("ROLLBACK");
       return res.status(404).json({ error: "User not found or cannot delete admin user" });
     }
-    return res.json({ success: true, deleted: result.rows[0] });
+
+    const crashTableRes = await client.query("SELECT to_regclass('public.crash_bets') AS t");
+    if (crashTableRes.rows[0].t) {
+      await client.query("DELETE FROM crash_bets WHERE user_id = $1", [req.params.id]);
+    }
+    await client.query("DELETE FROM bets WHERE user_id = $1", [req.params.id]);
+    await client.query("DELETE FROM deposits WHERE user_id = $1", [req.params.id]);
+    await client.query("DELETE FROM withdrawals WHERE user_id = $1", [req.params.id]);
+    await client.query("DELETE FROM sessions WHERE user_id = $1", [req.params.id]);
+    await client.query("DELETE FROM wallets WHERE user_id = $1", [req.params.id]);
+    await client.query("DELETE FROM users WHERE id = $1", [req.params.id]);
+
+    await client.query("COMMIT");
+    return res.json({ success: true, deleted: { id: userRes.rows[0].id, username: userRes.rows[0].username } });
   } catch (err) {
+    await client.query("ROLLBACK");
     return res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 

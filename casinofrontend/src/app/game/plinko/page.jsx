@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import Navbar from "@/components/Navbar";
+import BetHistory from "@/components/BetHistory";
 import { placePlinkoBet, getBalances, getPlinkoBetHistory } from "@/lib/api";
 import * as BC from "@/lib/betConfig";
 
@@ -390,60 +391,9 @@ export default function PlinkoPage() {
         </div>
 
         <div className="space-y-4">
-          <PlinkoHistory bets={history} onLoadMore={() => setHistoryPage(p => p + 1)} />
+          <BetHistory title="Plinko History" bets={history} onLoadMore={() => setHistoryPage(p => p + 1)} />
         </div>
       </main>
-    </div>
-  );
-}
-
-function PlinkoHistory({ bets, onLoadMore }) {
-  const rows = bets || [];
-  const formatAmount = (value) => {
-    const n = parseFloat(value || 0);
-    return Number.isFinite(n) ? n.toFixed(8) : "0.00000000";
-  };
-  const formatTime = (ts) => new Date(ts).toLocaleTimeString();
-
-  return (
-    <div className="bg-casino-card border border-casino-border rounded-2xl overflow-hidden h-full flex flex-col">
-      <div className="px-4 py-3 border-b border-casino-border flex items-center justify-between">
-        <h3 className="text-sm font-mono uppercase tracking-widest text-casino-muted">Plinko History</h3>
-        <span className="text-xs text-casino-muted">{rows.length} bets</span>
-      </div>
-      <div className="flex-1 overflow-y-auto">
-        {rows.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-casino-muted text-sm font-mono">
-            No bets yet
-          </div>
-        ) : (
-          <div className="divide-y divide-casino-border">
-            {rows.map((bet, i) => (
-              <div key={bet.id ?? i} className="px-4 py-3 hover:bg-casino-surface/50 transition-colors">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-mono text-casino-muted">{formatTime(bet.created_at)}</div>
-                  <div className={`text-xs font-mono font-semibold ${parseFloat(bet.profit || 0) >= 0 ? "text-green-400" : "text-red-400"}`}>
-                    {parseFloat(bet.profit || 0) >= 0 ? "+" : ""}{formatAmount(bet.profit)}
-                  </div>
-                </div>
-                <div className="mt-1 flex items-center justify-between text-xs font-mono">
-                  <div className="text-white">
-                    {formatAmount(bet.betAmount ?? bet.bet_amount)} → {formatAmount(bet.payout)} {bet.currency}
-                  </div>
-                  <div className="text-gold font-semibold">{parseFloat(bet.multiplier || 0).toFixed(2)}×</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      {rows.length >= 20 && (
-        <div className="p-3 border-t border-casino-border">
-          <button onClick={onLoadMore} className="w-full text-casino-muted text-xs font-mono hover:text-white transition-colors py-1">
-            Load more
-          </button>
-        </div>
-      )}
     </div>
   );
 }
