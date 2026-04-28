@@ -292,3 +292,8 @@ export async function requestPasswordReset(email) {
 export async function requestEmailVerification(email) {
   return request('/api/account/request-email-verification', { method: 'POST', body: JSON.stringify({ email }) });
 }
+
+
+export async function getReferralStats() {
+  return request('/api/community/referral/stats');
+}

@@ -92,6 +92,31 @@ router.post("/register", async (req, res) => {
       );
     }
 
+
+    await client.query(`CREATE TABLE IF NOT EXISTS referral_codes (
+      id BIGSERIAL PRIMARY KEY,
+      user_id INTEGER UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      code VARCHAR(32) UNIQUE NOT NULL,
+      uses_count INTEGER NOT NULL DEFAULT 0,
+      bonus_credits NUMERIC(28, 8) NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+
+    // Ensure each user has one permanent affiliate code
+    const existingCode = await client.query(`SELECT code FROM referral_codes WHERE user_id = $1`, [user.id]);
+    if (!existingCode.rows[0]) {
+      let code = require("crypto").randomBytes(4).toString("hex").toUpperCase();
+      for (let i = 0; i < 5; i += 1) {
+        try {
+          await client.query(`INSERT INTO referral_codes (user_id, code) VALUES ($1, $2)`, [user.id, code]);
+          break;
+        } catch (err) {
+          if (err.code !== "23505") throw err;
+          code = require("crypto").randomBytes(4).toString("hex").toUpperCase();
+        }
+      }
+    }
+
     await client.query("COMMIT");
 
     const ipAddress = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || null;

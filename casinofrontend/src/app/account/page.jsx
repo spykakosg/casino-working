@@ -6,6 +6,7 @@ import {
   getProfile,
   getMyReferral,
   createReferral,
+  getReferralStats,
   getSeeds,
   setClientSeed,
   rotateServerSeed,
@@ -25,19 +26,22 @@ export default function AccountPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "" });
+  const [affiliateStats, setAffiliateStats] = useState({ totals: { referees: 0, totalWagered: 0, totalCommission: 0 }, affiliates: [] });
 
   async function loadAll() {
     try {
       setError("");
-      const [b, p, r, s] = await Promise.all([
+      const [b, p, r, stats, s] = await Promise.all([
         getBalances(),
         getProfile(),
         getMyReferral(),
+        getReferralStats(),
         getSeeds(),
       ]);
       setBalances(Object.fromEntries(Object.entries(b.balances).map(([k, v]) => [k, v.balance])));
       setProfile(p);
-      setReferral(r.referral || null);
+      setReferral(r.referral || (stats.code ? { code: stats.code } : null));
+      setAffiliateStats(stats || { totals: { referees: 0, totalWagered: 0, totalCommission: 0 }, affiliates: [] });
       setSeeds(s.seeds || {});
       setSeedInputs(Object.fromEntries(Object.entries(s.seeds || {}).map(([k, v]) => [k, v.clientSeed])));
     } catch (err) {
@@ -108,8 +112,23 @@ export default function AccountPage() {
 
         <section className="bg-casino-card border border-casino-border rounded-xl p-4">
           <h2 className="font-semibold mb-2">Affiliate</h2>
-          <p className="text-sm text-casino-muted">Code: {referral?.code || "Not created"}</p>
-          <button onClick={handleCreateReferral} className="btn-gold mt-2 px-4 py-2">Generate affiliate code</button>
+          <p className="text-sm text-casino-muted">Code: {referral?.code || "Generating..."}</p>
+          <button onClick={handleCreateReferral} className="btn-gold mt-2 px-4 py-2">Get my affiliate code</button>
+          <div className="grid md:grid-cols-3 gap-2 mt-3 text-sm font-mono">
+            <div className="bg-casino-surface rounded p-2"><span className="text-casino-muted text-xs">Referees</span><div>{affiliateStats.totals.referees}</div></div>
+            <div className="bg-casino-surface rounded p-2"><span className="text-casino-muted text-xs">Total Wagered</span><div>{Number(affiliateStats.totals.totalWagered || 0).toFixed(4)}</div></div>
+            <div className="bg-casino-surface rounded p-2"><span className="text-casino-muted text-xs">Total Commission</span><div>{Number(affiliateStats.totals.totalCommission || 0).toFixed(8)}</div></div>
+          </div>
+          <div className="mt-3 space-y-1">
+            {affiliateStats.affiliates.length === 0 ? (
+              <p className="text-xs text-casino-muted">No affiliates yet.</p>
+            ) : affiliateStats.affiliates.map((a) => (
+              <div key={a.id} className="text-xs font-mono bg-casino-surface rounded px-2 py-1 flex justify-between">
+                <span>{a.username}</span>
+                <span>Wagered: {a.wagered.toFixed(4)} | Commission: {a.commission.toFixed(8)}</span>
+              </div>
+            ))}
+          </div>
         </section>
 
         <section className="bg-casino-card border border-casino-border rounded-xl p-4">

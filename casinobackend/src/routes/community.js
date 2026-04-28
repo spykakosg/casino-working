@@ -92,16 +92,37 @@ router.get("/leaderboard", async (req, res) => {
 });
 
 router.post("/referral/create", auth, async (req, res) => {
-  const code = req.body.code || crypto.randomBytes(4).toString("hex").toUpperCase();
   try {
     await ensureReferralTable(req.db);
-    await req.db.query(
-      `INSERT INTO referral_codes (user_id, code)
-       VALUES ($1, $2)
-       ON CONFLICT (user_id) DO UPDATE SET code = EXCLUDED.code`,
-      [req.user.id, code]
+    const existing = await req.db.query(
+      `SELECT code FROM referral_codes WHERE user_id = $1`,
+      [req.user.id]
     );
-    res.json({ code });
+    if (existing.rows[0]) {
+      return res.json({ code: existing.rows[0].code, existing: true });
+    }
+
+    let code = crypto.randomBytes(4).toString("hex").toUpperCase();
+    let saved = false;
+    for (let i = 0; i < 5 && !saved; i += 1) {
+      try {
+        await req.db.query(
+          `INSERT INTO referral_codes (user_id, code)
+           VALUES ($1, $2)`,
+          [req.user.id, code]
+        );
+        saved = true;
+      } catch (err) {
+        if (err.code !== "23505") throw err;
+        code = crypto.randomBytes(4).toString("hex").toUpperCase();
+      }
+    }
+
+    if (!saved) {
+      return res.status(500).json({ error: "Failed to generate unique affiliate code" });
+    }
+
+    res.json({ code, existing: false });
   } catch (err) {
     res.status(400).json({ error: "Unable to create referral code" });
   }
@@ -117,6 +138,51 @@ router.get("/referral/me", auth, async (req, res) => {
     res.json({ referral: result.rows[0] || null });
   } catch (err) {
     res.status(500).json({ error: "Failed to load referral" });
+  }
+});
+
+
+router.get("/referral/stats", auth, async (req, res) => {
+  try {
+    await ensureReferralTable(req.db);
+    const codeRes = await req.db.query(`SELECT code FROM referral_codes WHERE user_id = $1`, [req.user.id]);
+    if (!codeRes.rows[0]) return res.json({ code: null, totals: { referees: 0, totalWagered: 0, totalCommission: 0 }, affiliates: [] });
+
+    const code = codeRes.rows[0].code;
+    const listRes = await req.db.query(
+      `SELECT u.id, u.username,
+              COALESCE(SUM(b.bet_amount), 0) AS wagered,
+              COALESCE(SUM(re.commission_amount), 0) AS commission,
+              MAX(b.created_at) AS last_bet_at
+       FROM users u
+       LEFT JOIN bets b ON b.user_id = u.id
+       LEFT JOIN referral_earnings re ON re.referred_user_id = u.id AND re.referrer_user_id = $1
+       WHERE u.referred_by_code = $2
+       GROUP BY u.id, u.username
+       ORDER BY wagered DESC`,
+      [req.user.id, code]
+    );
+
+    const totals = listRes.rows.reduce((acc, row) => {
+      acc.referees += 1;
+      acc.totalWagered += parseFloat(row.wagered || 0);
+      acc.totalCommission += parseFloat(row.commission || 0);
+      return acc;
+    }, { referees: 0, totalWagered: 0, totalCommission: 0 });
+
+    res.json({
+      code,
+      totals,
+      affiliates: listRes.rows.map((r) => ({
+        id: r.id,
+        username: r.username,
+        wagered: parseFloat(r.wagered || 0),
+        commission: parseFloat(r.commission || 0),
+        lastBetAt: r.last_bet_at,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load affiliate stats" });
   }
 });
 
