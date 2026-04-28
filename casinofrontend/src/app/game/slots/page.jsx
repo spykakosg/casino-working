@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import Navbar from "@/components/Navbar";
@@ -9,45 +9,17 @@ import * as BC from "@/lib/betConfig";
 
 const CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
 const SHORT = { USDT_POLYGON: "USDT", ETH_POLYGON: "ETH", USDT_TRON: "USDT₮", BTC: "BTC" };
+const MULTS = [128, 64, 32, 16, 8, 4, 2, 1];
 
-const SYMBOL_MAP = {
-  seven:  { emoji: "₿", label: "BTC" },
-  bar:    { emoji: "Ξ", label: "ETH" },
-  bell:   { emoji: "Ð", label: "DOGE" },
-  cherry: { emoji: "◎", label: "SOL" },
-  lemon:  { emoji: "◉", label: "ADA" },
-};
-
-const SYMBOL_LIST = Object.keys(SYMBOL_MAP);
-
-function ReelCell({ symbol, spinning, won }) {
-  const [display, setDisplay] = useState(symbol);
-  const intervalRef = useRef(null);
-
-  useEffect(() => {
-    if (spinning) {
-      intervalRef.current = setInterval(() => {
-        setDisplay(SYMBOL_LIST[Math.floor(Math.random() * SYMBOL_LIST.length)]);
-      }, 65);
-      return () => clearInterval(intervalRef.current);
-    }
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    setDisplay(symbol);
-  }, [spinning, symbol]);
-
-  const info = SYMBOL_MAP[display] || SYMBOL_MAP.lemon;
-  return (
-    <div className={`h-20 sm:h-24 rounded-2xl border flex flex-col items-center justify-center transition-all duration-300 ${
-      won
-        ? "border-yellow-300 bg-gradient-to-b from-yellow-500/25 to-orange-500/20 shadow-[0_0_24px_rgba(255,200,0,.35)] scale-[1.03]"
-        : spinning
-        ? "border-fuchsia-400/40 bg-[#101734] animate-pulse"
-        : "border-blue-500/35 bg-[#0d1430]"
-    }`}>
-      <div className={`text-3xl sm:text-4xl ${spinning ? "animate-bounce" : ""}`}>{info.emoji}</div>
-      <div className="text-[10px] sm:text-xs text-casino-muted font-mono mt-1">{info.label}</div>
-    </div>
-  );
+function symbolCell(sym) {
+  const map = {
+    seven: { cls: "coinSym", inner: "₿" },
+    bar: { cls: "ethSym", inner: "Ξ" },
+    bell: { cls: "dogeSym", inner: "Ð" },
+    cherry: { cls: "solSym", inner: "◎" },
+    lemon: { cls: "xrpSym", inner: "✕" },
+  };
+  return map[sym] || map.lemon;
 }
 
 export default function SlotsPage() {
@@ -56,15 +28,14 @@ export default function SlotsPage() {
 
   const [currency, setCurrency] = useState("USDT_POLYGON");
   const [betAmount, setBetAmount] = useState("1");
-  const [spinning, setSpinning] = useState(false);
-  const [grid, setGrid] = useState(null);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState("");
   const [balances, setBalances] = useState({});
   const [history, setHistory] = useState([]);
   const [historyPage, setHistoryPage] = useState(0);
-  const [reelStates, setReelStates] = useState([false, false, false, false, false]);
-  const [winAnim, setWinAnim] = useState(false);
+  const [spinning, setSpinning] = useState(false);
+  const [result, setResult] = useState(null);
+  const [grid, setGrid] = useState(null);
+  const [error, setError] = useState("");
+  const [winToast, setWinToast] = useState("");
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -72,6 +43,8 @@ export default function SlotsPage() {
 
   useEffect(() => { if (user) fetchBalances(); }, [user]);
   useEffect(() => { if (user) fetchHistory(); }, [user, historyPage]);
+  useEffect(() => { BC.fetchPrices(); }, []);
+  useEffect(() => { setBetAmount(BC.defaultBet(currency)); }, [currency]);
 
   async function fetchBalances() {
     try {
@@ -89,218 +62,201 @@ export default function SlotsPage() {
     } catch {}
   }
 
-  async function handleSpin() {
+  async function spin() {
+    if (spinning) return;
     setError("");
-    setSpinning(true);
     setResult(null);
-    setWinAnim(false);
-    setReelStates([true, true, true, true, true]);
+    setSpinning(true);
 
     try {
       const data = await placeSlotsBet({ currency, betAmount: parseFloat(betAmount) });
       const bet = data.bet;
 
-      const delays = [450, 750, 1050, 1350, 1650];
-      delays.forEach((delay, col) => {
-        setTimeout(() => {
-          setGrid(bet.grid);
-          setReelStates(prev => {
-            const next = [...prev];
-            next[col] = false;
-            return next;
-          });
-        }, delay);
-      });
+      setGrid(bet.grid);
+      setResult(bet);
+      setBalances(prev => ({ ...prev, [currency]: data.balance }));
+      setHistory(prev => [{
+        id: bet.betId,
+        game: "slots",
+        currency,
+        bet_amount: bet.betAmount,
+        payout: bet.payout,
+        profit: bet.profit,
+        won: bet.won,
+        multiplier: bet.multiplier,
+        created_at: new Date().toISOString(),
+      }, ...prev]);
 
-      setTimeout(() => {
-        setResult(bet);
-        setSpinning(false);
-        setBalances(prev => ({ ...prev, [currency]: data.balance }));
-
-        if (bet.won) {
-          setWinAnim(true);
-          setTimeout(() => setWinAnim(false), 2600);
-        }
-
-        setHistory(prev => [{
-          id: bet.betId,
-          game: "slots",
-          currency,
-          bet_amount: bet.betAmount,
-          payout: bet.payout,
-          profit: bet.profit,
-          won: bet.won,
-          multiplier: bet.multiplier,
-          created_at: new Date().toISOString(),
-        }, ...prev]);
-      }, 1900);
+      if (bet.won) {
+        setWinToast(bet.multiplier >= 50 ? "MEGA WIN!" : bet.multiplier >= 10 ? "BIG WIN!" : "WIN!");
+        setTimeout(() => setWinToast(""), 1200);
+      }
     } catch (err) {
       setError(err.message);
+    } finally {
       setSpinning(false);
-      setReelStates([false, false, false, false, false]);
     }
   }
-
-  useEffect(() => { BC.fetchPrices(); }, []);
-  useEffect(() => { setBetAmount(BC.defaultBet(currency)); }, [currency]);
 
   function halfBet() { setBetAmount(v => BC.halfBet(v, currency)); }
   function doubleBet() { setBetAmount(v => BC.doubleBet(v, currency)); }
   function maxBet() { setBetAmount(BC.maxBetAmount(currency, balances[currency])); }
 
-  if (authLoading) return <LoadingScreen />;
-
   const displayGrid = grid || [
-    [{ name: "seven" }, { name: "bar" }, { name: "bell" }, { name: "cherry" }, { name: "lemon" }],
-    [{ name: "lemon" }, { name: "cherry" }, { name: "bar" }, { name: "bell" }, { name: "seven" }],
-    [{ name: "bar" }, { name: "seven" }, { name: "lemon" }, { name: "cherry" }, { name: "bell" }],
+    [{ name: "bar" }, { name: "bell" }, { name: "seven" }, { name: "cherry" }, { name: "bell" }],
+    [{ name: "lemon" }, { name: "seven" }, { name: "bar" }, { name: "cherry" }, { name: "lemon" }],
+    [{ name: "cherry" }, { name: "bell" }, { name: "seven" }, { name: "bar" }, { name: "lemon" }],
   ];
 
-  const winningCells = new Set();
-  if (result?.won && result.winningLine >= 0) {
-    const linePatterns = [
-      [[0,0],[0,1],[0,2],[0,3],[0,4]],
-      [[1,0],[1,1],[1,2],[1,3],[1,4]],
-      [[2,0],[2,1],[2,2],[2,3],[2,4]],
-      [[0,0],[1,1],[2,2],[1,3],[0,4]],
-      [[2,0],[1,1],[0,2],[1,3],[2,4]],
-    ];
-    const pattern = linePatterns[result.winningLine];
-    if (pattern) {
-      const count = result.matchCount || 3;
-      for (let i = 0; i < count; i++) winningCells.add(`${pattern[i][0]}-${pattern[i][1]}`);
-    }
-  }
-
+  const activeMult = result?.multiplier || 1;
+  const balance = balances[currency] || 0;
   const dec = BC.displayDecimals(currency);
-  const profitText = result ? Math.abs(parseFloat(result.profit || 0)).toFixed(dec) : "0";
+
+  if (authLoading) return <LoadingScreen />;
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#050914]">
+    <div className="min-h-screen flex flex-col">
       <Navbar balances={balances} activeCurrency={currency} onCurrencyChange={setCurrency} />
 
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 space-y-3">
-          <div className={`rounded-3xl border p-4 sm:p-5 relative overflow-hidden ${
-            winAnim ? "border-yellow-300 shadow-[0_0_45px_rgba(255,200,0,.25)]" : "border-blue-500/35"
-          } bg-gradient-to-b from-[#0a1030] to-[#050914]`}>
-            <div className="absolute inset-0 opacity-30 pointer-events-none" style={{ backgroundImage: "radial-gradient(circle at 50% 0%, #2b3f8f 0%, transparent 55%)" }} />
+      <main className="fitSlots flex-1 p-2">
+        <div className="gameSlots">
+          {winToast && <div className="toastSlots show">{winToast}</div>}
 
-            <div className="relative z-10 grid grid-cols-3 gap-2 mb-3">
-              <Panel title="Jackpot" value="$251,459.70" tone="gold" align="left" />
-              <div className="rounded-xl border border-fuchsia-400/30 bg-gradient-to-r from-blue-500/15 to-fuchsia-500/15 px-3 py-2 text-center flex items-center justify-center">
-                <h2 className="text-lg sm:text-2xl font-black tracking-widest text-blue-200">CRYPTO FORTUNE</h2>
-              </div>
-              <Panel title="Multiplier" value={result?.multiplier ? `x${result.multiplier}` : "x--"} tone="pink" align="right" />
+          <section className="topSlots">
+            <div className="panelSlots jackpot cutLeft">
+              <div className="labelSlots">Jackpot</div>
+              <div className="amountSlots">$251,459.70</div>
             </div>
+            <div className="panelSlots logoSlots">
+              <div className="coinSlots">₿</div>
+              <div>
+                <h1>CRYPTO</h1>
+                <p>FORTUNE</p>
+              </div>
+            </div>
+            <div className="panelSlots topMulti cutRight">
+              <div className="labelSlots">Multiplier</div>
+              <div className="amountSlots">x{activeMult}</div>
+            </div>
+          </section>
 
-            <div className="grid grid-cols-[90px_1fr_90px] gap-2">
-              <SideCard label="Free Spins" value="12" footer={`Total ${SHORT[currency]}`} />
+          <section className="midSlots">
+            <aside className="panelSlots leftInfo">
+              <div className="infoBlock">
+                <div className="infoTitle purple">Free Spins</div>
+                <div className="infoNum purple">0</div>
+              </div>
+              <div className="infoBlock">
+                <div className="infoTitle green">Total Win</div>
+                <div className="infoNum green">{result?.won ? parseFloat(result.profit).toFixed(dec) : "0.00"}</div>
+                <div className="infoTitle green">{SHORT[currency]}</div>
+              </div>
+            </aside>
 
-              <div className="rounded-2xl border border-blue-500/35 bg-black/35 p-2 sm:p-3">
-                {displayGrid.map((row, r) => (
-                  <div key={r} className="grid grid-cols-5 gap-1.5 sm:gap-2 mb-1.5 last:mb-0">
-                    {row.map((sym, c) => (
-                      <ReelCell
-                        key={`${r}-${c}`}
-                        symbol={sym.name}
-                        spinning={reelStates[c]}
-                        won={winningCells.has(`${r}-${c}`)}
-                      />
-                    ))}
+            <div className={`panelSlots reelsSlots ${spinning ? "spinning" : ""}`}>
+              {displayGrid.flat().map((cell, i) => {
+                const s = symbolCell(cell.name);
+                return (
+                  <div key={i} className="cellSlots">
+                    <div className={`symbolSlots ${s.cls}`}>{s.inner}</div>
                   </div>
-                ))}
-              </div>
-
-              <SideCard label="Win" value={result?.won ? `+${profitText}` : "--"} footer={SHORT[currency]} />
+                );
+              })}
             </div>
 
-            {result && (
-              <div className="mt-3 text-center">
-                {result.won ? (
-                  <>
-                    <div className="text-yellow-300 font-black text-2xl">WIN x{result.multiplier}</div>
-                    <div className="text-green-400 font-mono text-sm">+{profitText} {SHORT[currency]}</div>
-                  </>
-                ) : (
-                  <div className="text-casino-muted text-sm">No hit this spin — try again.</div>
-                )}
-              </div>
-            )}
-          </div>
+            <aside className="panelSlots multPanel">
+              {MULTS.map(m => (
+                <div key={m} className={`multChip ${m === activeMult ? "active" : ""}`}>x{m}</div>
+              ))}
+            </aside>
+          </section>
 
-          {error && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-xl px-3 py-2">{error}</div>}
+          <section className="bottomSlots">
+            <div className="panelSlots bottomPanel">
+              <div className="bottomLabel">Balance</div>
+              <div className="bottomVal">{parseFloat(balance).toFixed(dec)} {SHORT[currency]}</div>
+            </div>
 
-          <div className="bg-[#0b1230] border border-blue-500/30 rounded-2xl p-4 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <span className="text-xs text-casino-muted font-mono uppercase tracking-widest">Bet Amount</span>
+            <div className="panelSlots bottomPanel betPanel">
+              <button className="betBtn" onClick={halfBet}>−</button>
+              <div>
+                <div className="bottomLabel">Bet</div>
                 <input
                   type="number"
                   min={BC.inputMin(currency)}
                   step={BC.stepSize(currency)}
                   value={betAmount}
                   onChange={e => setBetAmount(v => BC.normalizeBetInput(e.target.value, currency, v))}
-                  className="w-full bg-casino-surface border border-casino-border rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-gold/50"
+                  className="betInput"
                 />
-                <div className="flex gap-1">
-                  <button onClick={halfBet} className="flex-1 bg-casino-surface border border-casino-border rounded px-2 py-1 text-xs text-casino-muted hover:text-white">1/2</button>
-                  <button onClick={doubleBet} className="flex-1 bg-casino-surface border border-casino-border rounded px-2 py-1 text-xs text-casino-muted hover:text-white">2x</button>
-                  <button onClick={maxBet} className="flex-1 bg-casino-surface border border-casino-border rounded px-2 py-1 text-xs text-casino-muted hover:text-white">Max</button>
-                </div>
               </div>
-
-              <div className="space-y-1">
-                <span className="text-xs text-casino-muted font-mono uppercase tracking-widest">Currency</span>
-                <select
-                  value={currency}
-                  onChange={e => setCurrency(e.target.value)}
-                  className="w-full bg-casino-surface border border-casino-border rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-gold/50"
-                >
-                  {CURRENCIES.map(c => <option key={c} value={c}>{SHORT[c]}</option>)}
-                </select>
-              </div>
+              <button className="betBtn" onClick={doubleBet}>+</button>
             </div>
 
-            <button
-              onClick={handleSpin}
-              disabled={spinning}
-              className="w-full py-3 rounded-xl font-black text-sm transition-all disabled:opacity-50 bg-gradient-to-r from-blue-500 via-fuchsia-500 to-yellow-400 text-black hover:shadow-lg hover:shadow-fuchsia-500/20"
-            >
-              {spinning ? "SPINNING..." : "SPIN"}
-            </button>
-          </div>
+            <div className="centerSpin"><button className="spinBtn" disabled={spinning} onClick={spin}>↻</button></div>
+
+            <div className="panelSlots bottomPanel autoPanel" onClick={maxBet}>
+              <div className="bottomLabel">Max Bet</div>
+              <div className="bottomVal">Set</div>
+            </div>
+
+            <div className="panelSlots bottomPanel winPanel">
+              <div className="bottomLabel">Win</div>
+              <div className="bottomVal">{result?.won ? parseFloat(result.profit).toFixed(dec) : `0.${"0".repeat(dec)}`}</div>
+              <div className="bottomLabel">{SHORT[currency]}</div>
+            </div>
+          </section>
         </div>
 
-        <div className="space-y-4">
-          <BetHistory title="Slots History" bets={history} onLoadMore={() => setHistoryPage(p => p + 1)} />
-        </div>
+        {error && <div className="mt-2 text-red-400 font-mono text-sm">{error}</div>}
       </main>
-    </div>
-  );
-}
 
-function Panel({ title, value, tone, align = "left" }) {
-  const toneClass = tone === "gold"
-    ? "border-yellow-400/30 from-yellow-500/15 to-orange-500/15 text-yellow-300"
-    : "border-fuchsia-400/30 from-fuchsia-500/15 to-violet-500/15 text-fuchsia-300";
-
-  return (
-    <div className={`rounded-xl border bg-gradient-to-r ${toneClass} px-3 py-2 ${align === "right" ? "text-right" : "text-left"}`}>
-      <p className="text-[10px] uppercase tracking-widest font-mono opacity-80">{title}</p>
-      <p className="font-black text-lg">{value}</p>
-    </div>
-  );
-}
-
-function SideCard({ label, value, footer }) {
-  return (
-    <div className="rounded-xl border border-blue-500/35 bg-[#09112c] px-2 py-3 text-center flex flex-col justify-between">
-      <div>
-        <p className="text-[10px] uppercase tracking-widest text-blue-300/80 font-mono">{label}</p>
-        <p className="text-2xl sm:text-3xl font-black text-fuchsia-300 mt-2">{value}</p>
+      <div className="max-w-7xl mx-auto w-full px-4 pb-4">
+        <BetHistory title="Slots History" bets={history} onLoadMore={() => setHistoryPage(p => p + 1)} />
       </div>
-      <p className="text-[10px] text-casino-muted font-mono mt-3">{footer}</p>
+
+      <style jsx>{`
+        .fitSlots{display:flex;align-items:center;justify-content:center}
+        .gameSlots{width:min(1540px,100%);aspect-ratio:16/9;max-height:calc(100vh - 120px);position:relative;overflow:hidden;padding:12px;border-radius:18px;border:2px solid rgba(58,151,255,.8);background:linear-gradient(180deg,rgba(8,16,42,.97),rgba(5,7,22,.99));box-shadow:0 0 60px rgba(0,120,255,.36),inset 0 0 38px rgba(122,39,255,.24);display:grid;grid-template-rows:17% 63% 20%;gap:10px}
+        .topSlots,.midSlots,.bottomSlots{display:grid;gap:10px;min-height:0}
+        .topSlots{grid-template-columns:1fr 1.35fr 1fr}.midSlots{grid-template-columns:13% minmax(0,1fr) 10%}.bottomSlots{grid-template-columns:1.1fr 1.05fr .62fr .62fr 1.52fr}
+        .panelSlots{border:2px solid rgba(62,145,255,.72);background:linear-gradient(180deg,rgba(13,25,65,.94),rgba(6,8,25,.96));box-shadow:inset 0 0 25px rgba(0,183,255,.12),0 0 18px rgba(43,132,255,.18);border-radius:12px}
+        .cutLeft{clip-path:polygon(0 0,88% 0,100% 50%,88% 100%,0 100%,5% 50%);border-color:rgba(255,166,34,.78)}
+        .cutRight{clip-path:polygon(12% 0,100% 0,95% 50%,100% 100%,12% 100%,0 50%);border-color:rgba(183,65,255,.85)}
+        .jackpot,.topMulti{display:flex;flex-direction:column;justify-content:center;padding:0 20px}
+        .topMulti{text-align:right;align-items:flex-end}
+        .labelSlots{font-size:14px;font-weight:900;letter-spacing:.08em;color:#ffd15d;text-transform:uppercase}
+        .amountSlots{font-size:36px;font-weight:900;color:#ffcf4b;text-shadow:0 0 17px rgba(255,176,0,.85)}
+        .logoSlots{position:relative;border-color:rgba(0,198,255,.9);background:linear-gradient(180deg,#17366b,#090e2c);display:flex;align-items:center;justify-content:center;text-align:center;clip-path:polygon(10% 0,90% 0,100% 50%,90% 100%,10% 100%,0 50%)}
+        .coinSlots{position:absolute;top:-18%;width:56px;aspect-ratio:1;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#fff3a3,#f59b00 62%,#6f3300);border:4px solid #3b2200;color:#351900;font-size:34px;font-weight:900}
+        .logoSlots h1{font-size:62px;line-height:.82;letter-spacing:.055em;background:linear-gradient(#fff,#d4defe 34%,#ffbe42 70%,#5b2600);-webkit-background-clip:text;color:transparent}
+        .logoSlots p{margin-top:.18em;font-size:20px;font-weight:900;letter-spacing:.24em;color:#ffd45e}
+        .leftInfo{display:grid;grid-template-rows:1fr 1fr;overflow:hidden}
+        .infoBlock{display:flex;align-items:center;justify-content:center;text-align:center;flex-direction:column;border-bottom:1px solid rgba(104,94,255,.35)}
+        .infoBlock:last-child{border:0}.purple{color:#e36aff}.green{color:#39ffad}.infoTitle{font-size:14px;font-weight:900;text-transform:uppercase}.infoNum{font-size:40px;font-weight:900}
+        .reelsSlots{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(3,minmax(0,1fr));gap:3px;padding:5px}
+        .cellSlots{display:grid;place-items:center;background:radial-gradient(circle,rgba(36,54,115,.7),rgba(3,7,25,.98));border:1px solid rgba(66,140,255,.46)}
+        .symbolSlots{width:82%;aspect-ratio:1;display:grid;place-items:center;font-size:54px;font-weight:900}
+        .coinSym{border-radius:50%;border:4px solid #ffd16a;background:radial-gradient(circle at 35% 24%,#fff1a2,#ffae10 48%,#8b4200);color:#3a1b00}
+        .ethSym{border-radius:50%;border:4px solid #b95cff;background:radial-gradient(circle,rgba(139,84,255,.72),#101133 72%);color:#d9c8ff}
+        .dogeSym{border-radius:50%;border:4px solid #ffbf63;background:radial-gradient(circle,#ffd269,#b95d00 68%);color:#4a1e00}
+        .solSym{border-radius:50%;border:4px solid #25eaff;background:radial-gradient(circle,rgba(0,236,255,.28),#091031 72%);color:#7ff}
+        .xrpSym{border-radius:50%;border:4px solid #ff63f3;background:radial-gradient(circle,rgba(255,69,236,.42),#140d31 72%);color:#ff8cf7}
+        .multPanel{display:grid;grid-template-rows:repeat(8,minmax(0,1fr));gap:5px;padding:6px}
+        .multChip{display:grid;place-items:center;border:2px solid #873bff;background:linear-gradient(180deg,#28134f,#080a24);border-radius:10px;clip-path:polygon(12% 0,88% 0,100% 50%,88% 100%,12% 100%,0 50%);font-size:23px;font-weight:900;color:#bd76ff}
+        .multChip.active{color:#fff05d;border-color:#ffad3b;box-shadow:0 0 24px rgba(255,143,0,.8)}
+        .bottomPanel{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:6px}
+        .bottomLabel{font-size:12px;font-weight:900;text-transform:uppercase;color:#aebfff}.bottomVal{font-size:26px;font-weight:900;color:#eef4ff}
+        .betPanel{display:flex;flex-direction:row;gap:9px}.betBtn{width:44px;height:44px;border:1px solid rgba(141,169,255,.6);border-radius:10px;background:linear-gradient(#374d9a,#111731);color:white;font-size:26px;font-weight:900}
+        .betInput{width:150px;background:transparent;border:none;color:#fff;font-weight:900;font-size:28px;text-align:center}
+        .centerSpin{display:grid;place-items:center}.spinBtn{width:92px;aspect-ratio:1;border-radius:50%;border:5px solid #67c7ff;background:radial-gradient(circle,#2469e8,#071026 72%);color:white;font-size:50px;cursor:pointer}
+        .winPanel{border-color:#ffad3b;background:linear-gradient(180deg,#311a07,#13081c)}
+        .autoPanel{cursor:pointer}
+        .toastSlots{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:90px;font-weight:900;color:#fff25d;text-shadow:0 0 24px #ff8000,0 8px 0 #571500;opacity:0}
+        .toastSlots.show{opacity:1;transition:opacity .2s}
+        .spinning .symbolSlots{animation:spinBlur .1s linear infinite}
+        @keyframes spinBlur{from{transform:translateY(-45%) scale(.9);filter:blur(3px);opacity:.45}to{transform:translateY(45%) scale(1.08);filter:blur(1px);opacity:1}}
+      `}</style>
     </div>
   );
 }
