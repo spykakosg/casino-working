@@ -231,6 +231,12 @@ export async function adminCreditUser(id, currency, amount) {
   });
 }
 
+export async function adminDeleteUser(id) {
+  return request(`/api/admin/users/${id}`, {
+    method: "DELETE",
+  });
+}
+
 export async function adminResetPnl() {
   return request("/api/admin/stats/reset", { method: "POST" });
 }

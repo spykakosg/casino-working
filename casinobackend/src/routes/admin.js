@@ -7,6 +7,7 @@
  * GET  /api/admin/users               - List users
  * GET  /api/admin/users/:id           - Single user detail
  * PUT  /api/admin/users/:id/ban       - Ban/unban user
+ * DELETE /api/admin/users/:id          - Delete user
  * PUT  /api/admin/users/:id/credit    - Credit funds to user wallet
  * GET  /api/admin/withdrawals/pending - Pending withdrawals
  * PUT  /api/admin/withdrawals/:id     - Approve or reject withdrawal
@@ -136,6 +137,22 @@ router.put("/users/:id/ban", async (req, res) => {
   try {
     await req.db.query("UPDATE users SET is_banned = $1 WHERE id = $2", [banned, req.params.id]);
     return res.json({ success: true, banned });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Delete User ──────────────────────────────────────────────────────────────
+router.delete("/users/:id", async (req, res) => {
+  try {
+    const result = await req.db.query(
+      "DELETE FROM users WHERE id = $1 AND role <> 'admin' RETURNING id, username",
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "User not found or cannot delete admin user" });
+    }
+    return res.json({ success: true, deleted: result.rows[0] });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
