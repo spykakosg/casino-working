@@ -52,6 +52,15 @@ export async function getSeeds() {
   return request("/api/auth/seeds");
 }
 
+
+export async function changePassword(currentPassword, newPassword) {
+  return request('/api/auth/password', {
+    method: 'PUT',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+}
+
+
 export async function setClientSeed(currency, clientSeed) {
   return request("/api/auth/client-seed", {
     method: "PUT",

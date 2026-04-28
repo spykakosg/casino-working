@@ -5,6 +5,19 @@ const { rollDice, hashServerSeed } = require("../engine/rng");
 
 const router = express.Router();
 
+async function ensureReferralTable(db) {
+  await db.query(
+    `CREATE TABLE IF NOT EXISTS referral_codes (
+      id BIGSERIAL PRIMARY KEY,
+      user_id INTEGER UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      code VARCHAR(32) UNIQUE NOT NULL,
+      uses_count INTEGER NOT NULL DEFAULT 0,
+      bonus_credits NUMERIC(28, 8) NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`
+  );
+}
+
 router.get("/profile", auth, async (req, res) => {
   try {
     const [statsRes, betsRes, seedsRes] = await Promise.all([
@@ -81,6 +94,7 @@ router.get("/leaderboard", async (req, res) => {
 router.post("/referral/create", auth, async (req, res) => {
   const code = req.body.code || crypto.randomBytes(4).toString("hex").toUpperCase();
   try {
+    await ensureReferralTable(req.db);
     await req.db.query(
       `INSERT INTO referral_codes (user_id, code)
        VALUES ($1, $2)
@@ -89,20 +103,19 @@ router.post("/referral/create", auth, async (req, res) => {
     );
     res.json({ code });
   } catch (err) {
-    if (err.code === "42P01") return res.json({ code: null, warning: "Referral system is not initialized yet" });
     res.status(400).json({ error: "Unable to create referral code" });
   }
 });
 
 router.get("/referral/me", auth, async (req, res) => {
   try {
+    await ensureReferralTable(req.db);
     const result = await req.db.query(
       `SELECT code, uses_count, bonus_credits FROM referral_codes WHERE user_id = $1`,
       [req.user.id]
     );
     res.json({ referral: result.rows[0] || null });
   } catch (err) {
-    if (err.code === "42P01") return res.json({ referral: null });
     res.status(500).json({ error: "Failed to load referral" });
   }
 });

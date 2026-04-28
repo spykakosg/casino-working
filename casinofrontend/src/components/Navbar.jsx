@@ -42,7 +42,6 @@ export default function Navbar({ balances = {}, activeCurrency, onCurrencyChange
           <NavLink href="/game/limbo" active={pathname === "/game/limbo"}>🎯 Limbo</NavLink>
           <NavLink href="/game/slots" active={pathname === "/game/slots"}>🎰 Slots</NavLink>
           <NavLink href="/wallet" active={pathname === "/wallet"}>💼 Wallet</NavLink>
-          <NavLink href="/profile" active={pathname === "/profile"}>👤 Profile</NavLink>
           <NavLink href="/leaderboard" active={pathname === "/leaderboard"}>🏆 Leaderboard</NavLink>
           <NavLink href="/provably-fair" active={pathname === "/provably-fair"}>🔐 Fairness</NavLink>
           {user?.role === "admin" && (
@@ -69,9 +68,9 @@ export default function Navbar({ balances = {}, activeCurrency, onCurrencyChange
           </div>
 
           {/* Username */}
-          <span className="text-casino-muted text-sm font-mono hidden sm:block">
+          <Link href="/account" className="text-casino-muted hover:text-white text-sm font-mono hidden sm:block">
             {user?.username}
-          </span>
+          </Link>
 
           {/* Logout */}
           <button
@@ -94,7 +93,6 @@ export default function Navbar({ balances = {}, activeCurrency, onCurrencyChange
         <MobileNavLink href="/game/limbo" active={pathname === "/game/limbo"}>🎯 Limbo</MobileNavLink>
         <MobileNavLink href="/game/slots" active={pathname === "/game/slots"}>🎰 Slots</MobileNavLink>
         <MobileNavLink href="/wallet" active={pathname === "/wallet"}>💼 Wallet</MobileNavLink>
-        <MobileNavLink href="/profile" active={pathname === "/profile"}>👤</MobileNavLink>
         <MobileNavLink href="/leaderboard" active={pathname === "/leaderboard"}>🏆</MobileNavLink>
         {user?.role === "admin" && (
           <MobileNavLink href="/admin" active={pathname === "/admin"}>🛡️ Admin</MobileNavLink>
