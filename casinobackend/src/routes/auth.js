@@ -16,7 +16,7 @@ const jwt = require("jsonwebtoken");
 const { generateServerSeed, hashServerSeed, generateClientSeed } = require("../engine/rng");
 const auth = require("../middleware/auth");
 
-const SUPPORTED_CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+const SUPPORTED_CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
 const SALT_ROUNDS = 12;
 
 function signToken(user) {

@@ -29,7 +29,7 @@ CREATE INDEX idx_users_email ON users(email);
 CREATE TABLE wallets (
   id            SERIAL PRIMARY KEY,
   user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  currency      VARCHAR(20) NOT NULL,  -- USDT_POLYGON | ETH_POLYGON | USDT_TRON | BTC
+  currency      VARCHAR(20) NOT NULL,  -- USDT | ETH_POLYGON | BTC
 
   -- Internal balance (off-chain)
   balance       NUMERIC(28, 8) NOT NULL DEFAULT 0 CHECK (balance >= 0),

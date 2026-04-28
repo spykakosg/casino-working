@@ -26,7 +26,7 @@ const { rotateSeed, hashServerSeed } = require("./rng");
  * @param {object} db      - pg Pool instance
  * @param {object} params
  * @param {number} params.userId
- * @param {string} params.currency   - "USDT_POLYGON" | "ETH_POLYGON" | "USDT_TRON" | "BTC"
+ * @param {string} params.currency   - "USDT" | "ETH_POLYGON" | "BTC"
  * @param {number} params.betAmount  - in the currency's base unit (e.g. USDT amount)
  * @param {number} params.target
  * @param {string} params.direction  - "under" | "over"

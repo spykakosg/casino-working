@@ -12,12 +12,11 @@ const express = require("express");
 const router = express.Router();
 const auth = require("../middleware/auth");
 
-const SUPPORTED_CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+const SUPPORTED_CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
 
 const CURRENCY_INFO = {
-  USDT_POLYGON: { name: "USDT", network: "Polygon", minWithdraw: 1, fee: 0.5 },
+  USDT: { name: "USDT", network: "Polygon", minWithdraw: 1, fee: 0.5 },
   ETH_POLYGON:  { name: "ETH",  network: "Polygon", minWithdraw: 0.001, fee: 0.0005 },
-  USDT_TRON:    { name: "USDT", network: "Tron (TRC-20)", minWithdraw: 1, fee: 1 },
   BTC:          { name: "BTC",  network: "Bitcoin", minWithdraw: 0.0001, fee: 0.00005 },
 };
 

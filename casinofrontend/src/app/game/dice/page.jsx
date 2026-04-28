@@ -7,14 +7,14 @@ import BetHistory from "@/components/BetHistory";
 import { placeDiceBet, getBalances, getBetHistory } from "@/lib/api";
 import * as BC from "@/lib/betConfig";
 
-const CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+const CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
 
 export default function DicePage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
   // Game state
-  const [currency, setCurrency]       = useState("USDT_POLYGON");
+  const [currency, setCurrency]       = useState("USDT");
   const [betAmount, setBetAmount]     = useState("1");
   const [target, setTarget]           = useState(50);
   const [direction, setDirection]     = useState("under");
@@ -208,7 +208,7 @@ export default function DicePage() {
                 </label>
                 <div className="grid grid-cols-2 gap-1">
                   {CURRENCIES.map(c => {
-                    const short = { USDT_POLYGON: "USDT", ETH_POLYGON: "ETH", USDT_TRON: "USDT₮", BTC: "BTC" };
+                    const short = { USDT: "USDT", ETH_POLYGON: "ETH", BTC: "BTC" };
                     return (
                       <button key={c} onClick={() => setCurrency(c)}
                         className={`py-1.5 rounded text-xs font-mono transition-colors ${

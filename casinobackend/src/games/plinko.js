@@ -35,6 +35,12 @@ const MULTIPLIERS = {
 
 const VALID_ROWS = [8, 12, 16];
 const VALID_RISKS = ["low", "medium", "high"];
+const MONEY_DECIMALS = 8;
+
+function roundDown(value, decimals = MONEY_DECIMALS) {
+  const factor = 10 ** decimals;
+  return Math.floor(value * factor) / factor;
+}
 
 function dropPlinko(serverSeed, clientSeed, nonce, rows) {
   const path = [];
@@ -52,8 +58,8 @@ function resolvePlinkoBet({ serverSeed, clientSeed, nonce, betAmount, rows, risk
   const { path, bucket } = dropPlinko(serverSeed, clientSeed, nonce, rows);
   const multipliers = MULTIPLIERS[rows][risk];
   const multiplier = multipliers[bucket];
-  const payout = parseFloat((betAmount * multiplier).toFixed(8));
-  const profit = parseFloat((payout - betAmount).toFixed(8));
+  const payout = roundDown(betAmount * multiplier);
+  const profit = roundDown(payout - betAmount);
   const won = payout > betAmount;
 
   return {

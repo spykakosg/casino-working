@@ -7,7 +7,7 @@ import BetHistory from "@/components/BetHistory";
 import { placeRouletteBet, getBalances, getRouletteBetHistory } from "@/lib/api";
 import * as BC from "@/lib/betConfig";
 
-const CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+const CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
 const RED_NUMBERS = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36];
 const WHEEL_ORDER = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
 
@@ -303,7 +303,7 @@ export default function RoulettePage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  const [currency, setCurrency]   = useState("USDT_POLYGON");
+  const [currency, setCurrency]   = useState("USDT");
   const [betAmount, setBetAmount] = useState("1");
   const [betType, setBetType]     = useState(null);
   const [betValue, setBetValue]   = useState(null);

@@ -8,11 +8,10 @@ import {
   getDepositHistory, getWithdrawalHistory,
 } from "@/lib/api";
 
-const CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+const CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
 const CURRENCY_LABELS = {
-  USDT_POLYGON: { name: "USDT", network: "Polygon", color: "text-purple-400" },
+  USDT: { name: "USDT", network: "Polygon", color: "text-purple-400" },
   ETH_POLYGON:  { name: "ETH",  network: "Polygon", color: "text-blue-400" },
-  USDT_TRON:    { name: "USDT", network: "Tron",    color: "text-red-400" },
   BTC:          { name: "BTC",  network: "Bitcoin", color: "text-orange-400" },
 };
 
@@ -21,7 +20,7 @@ export default function WalletPage() {
   const router = useRouter();
 
   const [balances, setBalances]           = useState({});
-  const [activeCurrency, setActiveCurrency] = useState("USDT_POLYGON");
+  const [activeCurrency, setActiveCurrency] = useState("USDT");
   const [tab, setTab]                     = useState("deposit"); // deposit | withdraw | history
   const [depositAddress, setDepositAddress] = useState(null);
   const [depositLoading, setDepositLoading] = useState(false);
@@ -135,7 +134,7 @@ export default function WalletPage() {
                   {info.name}
                 </div>
                 <div className="text-white font-mono font-bold text-lg">
-                  {bal.toFixed(4)}
+                  {bal.toFixed(8)}
                 </div>
                 <div className="text-casino-muted text-xs mt-0.5">{info.network}</div>
               </button>

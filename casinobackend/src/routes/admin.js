@@ -144,7 +144,7 @@ router.put("/users/:id/ban", async (req, res) => {
 // ─── Credit Funds to User ─────────────────────────────────────────────────────
 router.put("/users/:id/credit", async (req, res) => {
   const { currency, amount } = req.body;
-  const VALID_CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+  const VALID_CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
 
   if (!currency || !VALID_CURRENCIES.includes(currency)) {
     return res.status(400).json({ error: `currency must be one of: ${VALID_CURRENCIES.join(", ")}` });

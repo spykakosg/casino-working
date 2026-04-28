@@ -4,9 +4,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 
 const CURRENCY_SYMBOLS = {
-  USDT_POLYGON: "USDT",
-  ETH_POLYGON:  "ETH",
-  USDT_TRON:    "USDT₮",
+  USDT: "USDT",
+  ETH_POLYGON: "ETH",
   BTC:          "BTC",
 };
 
@@ -21,8 +20,7 @@ export default function Navbar({ balances = {}, activeCurrency, onCurrencyChange
   }
 
   const balance = balances[activeCurrency] ?? 0;
-  const isCrypto = activeCurrency === "BTC" || activeCurrency === "ETH_POLYGON";
-  const balanceDecimals = isCrypto ? 10 : 5;
+  const balanceDecimals = 8;
 
   return (
     <header className="border-b border-casino-border bg-casino-surface/80 backdrop-blur-sm sticky top-0 z-50">

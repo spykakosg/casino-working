@@ -9,8 +9,8 @@ import {
   adminGetPendingWithdrawals, adminProcessWithdrawal,
 } from "@/lib/api";
 
-const CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
-const CURRENCY_LABELS = { USDT_POLYGON: "USDT (Polygon)", ETH_POLYGON: "ETH (Polygon)", USDT_TRON: "USDT (Tron)", BTC: "BTC" };
+const CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
+const CURRENCY_LABELS = { USDT: "USDT (Polygon)", ETH_POLYGON: "ETH (Polygon)", BTC: "BTC" };
 
 export default function AdminPage() {
   const { user, loading: authLoading } = useAuth();
@@ -319,7 +319,7 @@ function UsersPanel() {
 // ─── User Detail Panel ────────────────────────────────────────────────────────
 function UserDetailPanel({ data, onClose, onRefresh, onUsersRefresh }) {
   const { user, wallets, stats } = data;
-  const [creditCurrency, setCreditCurrency] = useState("USDT_POLYGON");
+  const [creditCurrency, setCreditCurrency] = useState("USDT");
   const [creditAmount, setCreditAmount] = useState("");
   const [creditLoading, setCreditLoading] = useState(false);
   const [creditMsg, setCreditMsg] = useState("");

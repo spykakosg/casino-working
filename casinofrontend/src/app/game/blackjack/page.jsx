@@ -7,7 +7,7 @@ import BetHistory from "@/components/BetHistory";
 import { blackjackDeal, blackjackAction, getBalances, getBlackjackBetHistory } from "@/lib/api";
 import * as BC from "@/lib/betConfig";
 
-const CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+const CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
 const SUIT_SYMBOLS = { hearts: "\u2665", diamonds: "\u2666", clubs: "\u2663", spades: "\u2660" };
 
 function Card({ card, hidden = false, delay = 0, flipping = false }) {
@@ -83,7 +83,7 @@ export default function BlackjackPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  const [currency, setCurrency]   = useState("USDT_POLYGON");
+  const [currency, setCurrency]   = useState("USDT");
   const [betAmount, setBetAmount] = useState("1");
   const [error, setError]         = useState("");
   const [balances, setBalances]   = useState({});

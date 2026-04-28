@@ -29,7 +29,7 @@ router.post("/dice/bet", auth, async (req, res) => {
     return res.status(400).json({ error: "Missing required fields: currency, betAmount, target, direction" });
   }
 
-  const validCurrencies = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+  const validCurrencies = ["USDT", "ETH_POLYGON", "BTC"];
   if (!validCurrencies.includes(currency)) {
     return res.status(400).json({ error: `Invalid currency. Supported: ${validCurrencies.join(", ")}` });
   }
@@ -129,7 +129,7 @@ router.post("/roulette/bet", auth, async (req, res) => {
     return res.status(400).json({ error: "Missing required fields: currency, betAmount, betType" });
   }
 
-  const validCurrencies = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+  const validCurrencies = ["USDT", "ETH_POLYGON", "BTC"];
   if (!validCurrencies.includes(currency)) {
     return res.status(400).json({ error: `Invalid currency` });
   }
@@ -166,7 +166,7 @@ router.post("/plinko/bet", auth, async (req, res) => {
     return res.status(400).json({ error: "Missing required fields: currency, betAmount, rows, risk" });
   }
 
-  const validCurrencies = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+  const validCurrencies = ["USDT", "ETH_POLYGON", "BTC"];
   if (!validCurrencies.includes(currency)) {
     return res.status(400).json({ error: `Invalid currency` });
   }
@@ -202,7 +202,7 @@ router.post("/limbo/bet", auth, async (req, res) => {
     return res.status(400).json({ error: "Missing required fields: currency, betAmount, target" });
   }
 
-  const validCurrencies = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+  const validCurrencies = ["USDT", "ETH_POLYGON", "BTC"];
   if (!validCurrencies.includes(currency)) return res.status(400).json({ error: "Invalid currency" });
 
   const amount = parseFloat(betAmount);
@@ -235,7 +235,7 @@ router.post("/slots/bet", auth, async (req, res) => {
     return res.status(400).json({ error: "Missing required fields: currency, betAmount" });
   }
 
-  const validCurrencies = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+  const validCurrencies = ["USDT", "ETH_POLYGON", "BTC"];
   if (!validCurrencies.includes(currency)) return res.status(400).json({ error: "Invalid currency" });
 
   const amount = parseFloat(betAmount);
