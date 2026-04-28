@@ -53,13 +53,12 @@ router.get("/profile", auth, async (req, res) => {
 
 router.get("/leaderboard", async (req, res) => {
   const period = req.query.period || "all";
-  const type = req.query.type || "wagered";
 
   let timeFilter = "";
   if (period === "daily") timeFilter = "AND b.created_at >= NOW() - INTERVAL '1 day'";
   if (period === "weekly") timeFilter = "AND b.created_at >= NOW() - INTERVAL '7 day'";
 
-  const metric = type === "winners" ? "COALESCE(SUM(b.profit), 0)" : "COALESCE(SUM(b.bet_amount), 0)";
+  const metric = "COALESCE(SUM(b.bet_amount), 0)";
 
   try {
     const result = await req.db.query(
@@ -73,7 +72,7 @@ router.get("/leaderboard", async (req, res) => {
        LIMIT 50`
     );
 
-    res.json({ period, type, leaderboard: result.rows.map((r, i) => ({ rank: i + 1, ...r, value: Number(r.value) })) });
+    res.json({ period, type: "wagered", leaderboard: result.rows.map((r, i) => ({ rank: i + 1, ...r, value: Number(r.value) })) });
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch leaderboard" });
   }
@@ -89,7 +88,8 @@ router.post("/referral/create", auth, async (req, res) => {
       [req.user.id, code]
     );
     res.json({ code });
-  } catch {
+  } catch (err) {
+    if (err.code === "42P01") return res.status(503).json({ error: "Referral system is not initialized yet" });
     res.status(400).json({ error: "Unable to create referral code" });
   }
 });
@@ -101,7 +101,8 @@ router.get("/referral/me", auth, async (req, res) => {
       [req.user.id]
     );
     res.json({ referral: result.rows[0] || null });
-  } catch {
+  } catch (err) {
+    if (err.code === "42P01") return res.json({ referral: null });
     res.status(500).json({ error: "Failed to load referral" });
   }
 });

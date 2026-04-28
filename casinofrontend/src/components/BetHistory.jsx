@@ -37,46 +37,53 @@ export default function BetHistory({ history, bets, title, currency, onLoadMore 
   );
 }
 
+function readNum(...values) {
+  for (const value of values) {
+    const num = Number(value);
+    if (Number.isFinite(num)) return num;
+  }
+  return 0;
+}
+
 function BetRow({ bet }) {
-  const amount = parseFloat(bet.betAmount ?? bet.bet_amount);
-  const payout = parseFloat(bet.payout || 0);
-  const profit = bet.profit !== undefined && bet.profit !== null ? parseFloat(bet.profit) : payout - amount;
-  const roll = typeof bet.roll === "number" ? bet.roll : parseFloat(bet.roll);
+  const amount = readNum(bet.betAmount, bet.bet_amount, bet.amount, bet.stake);
+  const payout = readNum(bet.payout, bet.winAmount, bet.win_amount, bet.cashout);
+  const profit = readNum(bet.profit, payout - amount);
+  const roll = readNum(bet.roll, bet.result);
   const game = bet.game || "";
-  const isPush = Math.abs(profit) < 0.0001;
-  const isWin = profit > 0.0001;
+  const isPush = Math.abs(profit) < 0.00000001;
+  const isWin = profit > 0;
   const ccy = bet.currency || "";
-  const isCrypto = ccy === "BTC" || ccy === "ETH_POLYGON";
+  const isCrypto = ["BTC", "ETH", "ETH_POLYGON"].includes(ccy);
+
   function fmt(v) {
     if (!Number.isFinite(v)) return "0";
     const abs = Math.abs(v);
-    const dec = isCrypto || (abs > 0 && abs < 1) ? 8 : 5;
-    return v.toFixed(dec).replace(/\.?0+$/, "");
+    const dec = isCrypto ? 8 : abs > 0 && abs < 0.0001 ? 8 : abs > 0 && abs < 1 ? 6 : 4;
+    return v.toFixed(dec).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
   }
+
   return (
     <div className={`px-4 py-3 flex items-center gap-3 hover:bg-casino-surface/50 transition-colors ${
       isWin ? "border-l-2 border-green-500/40" : isPush ? "border-l-2 border-yellow-500/30" : "border-l-2 border-red-500/20"
     }`}>
-      {/* Main value */}
       <div className={`font-mono font-bold text-sm w-12 shrink-0 ${isWin ? "text-green-400" : isPush ? "text-yellow-400" : "text-red-400"}`}>
         {game === "plinko"
-          ? `${parseFloat(bet.multiplier || 0).toFixed(2)}×`
-          : (!isNaN(roll) ? roll.toFixed(2) : "—")}
+          ? `${readNum(bet.multiplier).toFixed(2)}×`
+          : (Number.isFinite(roll) ? roll.toFixed(2) : "—")}
       </div>
 
-      {/* Details */}
       <div className="flex-1 min-w-0">
         <div className="text-xs text-casino-muted font-mono truncate">
           {game === "plinko"
             ? `plinko · bucket ${bet.bucket ?? "?"}`
-            : `${bet.direction} ${bet.target} · ${bet.multiplier}×`}
+            : `${bet.direction || "—"} ${bet.target ?? "—"} · ${readNum(bet.multiplier).toFixed(2)}×`}
         </div>
         <div className="text-xs text-casino-muted/60 font-mono">
           {fmt(amount)} → {fmt(payout)}
         </div>
       </div>
 
-      {/* Profit */}
       <div className={`text-xs font-mono font-semibold shrink-0 ${
         isWin ? "text-green-400" : isPush ? "text-yellow-400" : "text-red-400"
       }`}>
