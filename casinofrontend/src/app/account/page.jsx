@@ -114,6 +114,17 @@ export default function AccountPage() {
           <h2 className="font-semibold mb-2">Affiliate</h2>
           <p className="text-sm text-casino-muted">Code: {referral?.code || "Generating..."}</p>
           <button onClick={handleCreateReferral} className="btn-gold mt-2 px-4 py-2">Get my affiliate code</button>
+          <details className="mt-3 bg-casino-surface rounded-lg p-3">
+            <summary className="cursor-pointer text-sm font-medium">How affiliate rewards work</summary>
+            <ul className="mt-2 text-xs text-casino-muted list-disc pl-4 space-y-1">
+              <li>Your affiliate code is permanent once generated.</li>
+              <li>Commission tiers are based on your referred users&apos; monthly wager volume.</li>
+              <li>Tier 1: 0.25% when monthly referred wager is below 5,000.</li>
+              <li>Tier 2: 0.35% when monthly referred wager is 5,000 to 24,999.9999.</li>
+              <li>Tier 3: 0.50% when monthly referred wager is 25,000+.</li>
+              <li>You can monitor aggregate stats and each referred user below.</li>
+            </ul>
+          </details>
           <div className="grid md:grid-cols-3 gap-2 mt-3 text-sm font-mono">
             <div className="bg-casino-surface rounded p-2"><span className="text-casino-muted text-xs">Referees</span><div>{affiliateStats.totals.referees}</div></div>
             <div className="bg-casino-surface rounded p-2"><span className="text-casino-muted text-xs">Total Wagered</span><div>{Number(affiliateStats.totals.totalWagered || 0).toFixed(4)}</div></div>

@@ -175,25 +175,6 @@ router.get("/users/:id", async (req, res) => {
     }
     const wallets = Object.entries(normalizedWallets).map(([currency, balance]) => ({ currency, balance }));
 
-    const byGame = byGameRes.rows.map((row) => {
-      const wagered = parseFloat(row.total_wagered || 0);
-      const payout = parseFloat(row.total_payout || 0);
-      const houseProfit = parseFloat(row.house_profit || 0);
-      const edgePct = wagered > 0 ? (houseProfit / wagered) * 100 : 0;
-      return { game: row.game, wagered, payout, houseProfit, edgePct };
-    });
-
-    const payoutTrend = trendRes.rows.map((row) => ({
-      day: row.day,
-      wagered: parseFloat(row.wagered || 0),
-      payout: parseFloat(row.payout || 0),
-      houseProfit: parseFloat(row.house_profit || 0),
-    }));
-
-    const pnlByCurrency = { allTime: { BTC: 0, ETH_POLYGON: 0 }, daily: { BTC: 0, ETH_POLYGON: 0 } };
-    for (const row of pnlByCurrencyRes.rows) pnlByCurrency.allTime[row.currency] = parseFloat(row.house_profit || 0);
-    for (const row of dailyPnlByCurrencyRes.rows) pnlByCurrency.daily[row.currency] = parseFloat(row.house_profit || 0);
-
     return res.json({
       user: userRes.rows[0],
       wallets,
@@ -295,25 +276,6 @@ router.put("/users/:id/credit", async (req, res) => {
       return res.status(404).json({ error: `No ${currency} wallet found for user ${req.params.id}` });
     }
 
-    const byGame = byGameRes.rows.map((row) => {
-      const wagered = parseFloat(row.total_wagered || 0);
-      const payout = parseFloat(row.total_payout || 0);
-      const houseProfit = parseFloat(row.house_profit || 0);
-      const edgePct = wagered > 0 ? (houseProfit / wagered) * 100 : 0;
-      return { game: row.game, wagered, payout, houseProfit, edgePct };
-    });
-
-    const payoutTrend = trendRes.rows.map((row) => ({
-      day: row.day,
-      wagered: parseFloat(row.wagered || 0),
-      payout: parseFloat(row.payout || 0),
-      houseProfit: parseFloat(row.house_profit || 0),
-    }));
-
-    const pnlByCurrency = { allTime: { BTC: 0, ETH_POLYGON: 0 }, daily: { BTC: 0, ETH_POLYGON: 0 } };
-    for (const row of pnlByCurrencyRes.rows) pnlByCurrency.allTime[row.currency] = parseFloat(row.house_profit || 0);
-    for (const row of dailyPnlByCurrencyRes.rows) pnlByCurrency.daily[row.currency] = parseFloat(row.house_profit || 0);
-
     return res.json({
       success: true,
       userId: parseInt(req.params.id),
@@ -345,7 +307,7 @@ router.get("/withdrawals/pending", async (req, res) => {
 
 // ─── Approve / Reject Withdrawal ─────────────────────────────────────────────
 router.put("/withdrawals/:id", async (req, res) => {
-  const { action, txHash } = req.body; // action: "approve" | "reject"
+  const { action } = req.body; // action: "approve" | "reject"
 
   if (!["approve", "reject"].includes(action)) {
     return res.status(400).json({ error: "action must be 'approve' or 'reject'" });
@@ -368,8 +330,17 @@ router.put("/withdrawals/:id", async (req, res) => {
 
     if (action === "approve") {
       await client.query(
-        `UPDATE withdrawals SET status = 'sent', tx_hash = $1, processed_at = NOW() WHERE id = $2`,
-        [txHash || null, wd.id]
+        `UPDATE withdrawals
+         SET status = 'processing'
+         WHERE id = $1`,
+        [wd.id]
+      );
+      await client.query(
+        `INSERT INTO withdrawal_jobs (withdrawal_id, status)
+         VALUES ($1, 'queued')
+         ON CONFLICT (withdrawal_id)
+         DO UPDATE SET status = 'queued', last_error = NULL, next_retry_at = NOW(), updated_at = NOW()`,
+        [wd.id]
       );
     } else {
       // Reject — refund balance

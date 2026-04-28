@@ -93,6 +93,26 @@ CREATE INDEX idx_withdrawals_user ON withdrawals(user_id);
 CREATE INDEX idx_withdrawals_status ON withdrawals(status);
 
 -- ============================================================
+-- WITHDRAWAL JOBS (payout queue / retry state machine)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS withdrawal_jobs (
+  id              BIGSERIAL PRIMARY KEY,
+  withdrawal_id   INTEGER UNIQUE NOT NULL REFERENCES withdrawals(id) ON DELETE CASCADE,
+  status          VARCHAR(16) NOT NULL DEFAULT 'queued', -- queued | processing | sent | failed
+  attempts        INTEGER NOT NULL DEFAULT 0,
+  next_retry_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  tx_hash         TEXT UNIQUE,
+  last_error      TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  processed_at    TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_withdrawal_jobs_status_retry
+  ON withdrawal_jobs(status, next_retry_at);
+
+
+-- ============================================================
 -- BETS
 -- ============================================================
 CREATE TABLE bets (
@@ -158,6 +178,10 @@ CREATE TRIGGER trg_users_updated_at
 
 CREATE TRIGGER trg_wallets_updated_at
   BEFORE UPDATE ON wallets
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+CREATE TRIGGER trg_withdrawal_jobs_updated_at
+  BEFORE UPDATE ON withdrawal_jobs
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ============================================================
