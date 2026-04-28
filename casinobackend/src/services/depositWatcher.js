@@ -31,10 +31,23 @@ const ERC20_ABI = [
   "function decimals() view returns (uint8)",
 ];
 
+function hasUsableAlchemyUrl() {
+  const url = (process.env.ALCHEMY_POLYGON_URL || "").trim();
+  if (!url) return false;
+  if (url.includes("YOUR_ALCHEMY_KEY")) return false;
+  return true;
+}
+
+function isLikelyBitcoinAddress(address) {
+  if (!address) return false;
+  if (address.includes("placeholder")) return false;
+  return /^(bc1|[13])[a-zA-HJ-NP-Z0-9]{20,}$/i.test(address);
+}
+
 // ─── Polygon (ETH + USDT) ─────────────────────────────────────────────────────
 async function watchPolygon() {
-  if (!process.env.ALCHEMY_POLYGON_URL) {
-    console.warn("⚠️  ALCHEMY_POLYGON_URL not set — Polygon watcher disabled");
+  if (!hasUsableAlchemyUrl()) {
+    console.warn("⚠️  ALCHEMY_POLYGON_URL missing/invalid (or still using YOUR_ALCHEMY_KEY) — Polygon watcher disabled");
     return;
   }
 
@@ -102,9 +115,24 @@ async function watchBitcoin() {
       );
 
       for (const wallet of walletsRes.rows) {
+        if (!isLikelyBitcoinAddress(wallet.deposit_address)) continue;
+
         const url = `https://blockstream.info/api/address/${wallet.deposit_address}/txs`;
         const resp = await fetch(url);
-        const txs = await resp.json();
+        const body = await resp.text();
+        if (!resp.ok) {
+          console.warn(`⚠️  BTC explorer error for ${wallet.deposit_address}: ${resp.status} ${body.slice(0, 120)}`);
+          continue;
+        }
+
+        let txs;
+        try {
+          txs = JSON.parse(body);
+        } catch {
+          console.warn(`⚠️  BTC explorer returned non-JSON for ${wallet.deposit_address}: ${body.slice(0, 120)}`);
+          continue;
+        }
+
         if (!Array.isArray(txs)) continue;
 
         for (const tx of txs) {
