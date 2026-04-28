@@ -1,13 +1,18 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import Navbar from "@/components/Navbar";
-import BetHistory from "@/components/BetHistory";
 import { placePlinkoBet, getBalances, getPlinkoBetHistory } from "@/lib/api";
 import * as BC from "@/lib/betConfig";
 
 const CURRENCIES = ["USDT_POLYGON", "ETH_POLYGON", "USDT_TRON", "BTC"];
+const CURRENCY_LABEL = {
+  USDT_POLYGON: "USDT POLYGON",
+  ETH_POLYGON: "ETH POLYGON",
+  USDT_TRON: "USDT TRON",
+  BTC: "BTC",
+};
 
 const MULTIPLIERS = {
   8: {
@@ -227,7 +232,6 @@ export default function PlinkoPage() {
   const [balances, setBalances]   = useState({});
   const [history, setHistory]     = useState([]);
   const [historyPage, setHistoryPage] = useState(0);
-  const [lastMultiplier, setLastMultiplier] = useState(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -259,7 +263,6 @@ export default function PlinkoPage() {
     setPath(null);
     setBucket(null);
     setAnimating(false);
-    setLastMultiplier(null);
     try {
       const data = await placePlinkoBet({
         currency,
@@ -288,7 +291,6 @@ export default function PlinkoPage() {
       setTimeout(() => {
         setAnimating(false);
         setDropping(false);
-        setLastMultiplier(bet.multiplier);
       }, (rows + 2) * 110);
     } catch (err) {
       setError(err.message);
@@ -305,95 +307,124 @@ export default function PlinkoPage() {
   if (authLoading) return <LoadingScreen />;
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col plk-page">
       <Navbar balances={balances} activeCurrency={currency} onCurrencyChange={setCurrency} />
-
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 space-y-3">
-
-          <div className="bg-casino-card border border-casino-border rounded-2xl p-3 space-y-2 relative overflow-hidden">
-            <div className="absolute inset-0 opacity-5"
-              style={{backgroundImage:"radial-gradient(circle at 50% 50%, var(--gold) 0%, transparent 70%)"}} />
-
-            <div className="relative z-10 w-full flex flex-col items-center">
-              <PlinkoBoard rows={rows} path={path} bucket={bucket} risk={risk} animating={animating} />
-
-              {result && !animating && (
-                <div className={`text-center mt-2 transition-all duration-500 ${lastMultiplier ? "scale-110" : ""}`}>
-                  <span className={`text-xl font-black ${result.multiplier >= 2 ? "text-gold" : result.multiplier >= 1 ? "text-blue-400" : "text-red-400"}`}>
-                    {result.multiplier}x
-                  </span>
-                  <span className={`ml-2 text-sm font-mono ${result.profit >= 0 ? "text-green-400" : "text-red-400"}`}>
-                    {result.profit >= 0 ? "+" : ""}{result.profit.toFixed(5)}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-xl px-3 py-1.5 relative z-10">{error}</div>
-            )}
-
-            <div className="grid grid-cols-2 gap-2 relative z-10">
-              <div className="space-y-1">
-                <span className="text-xs text-casino-muted font-mono uppercase tracking-widest">Rows</span>
-                <div className="flex gap-1">
-                  {[8, 12, 16].map(r => (
-                    <button key={r} onClick={() => setRows(r)} disabled={dropping}
-                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all border ${
-                        rows === r ? "bg-gold/20 border-gold/50 text-gold" : "bg-casino-surface border-casino-border text-casino-muted hover:text-white"
-                      } disabled:opacity-50`}>
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs text-casino-muted font-mono uppercase tracking-widest">Risk</span>
-                <div className="flex gap-1">
-                  {["low", "medium", "high"].map(r => (
-                    <button key={r} onClick={() => setRisk(r)} disabled={dropping}
-                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all border capitalize ${
-                        risk === r ? "bg-gold/20 border-gold/50 text-gold" : "bg-casino-surface border-casino-border text-casino-muted hover:text-white"
-                      } disabled:opacity-50`}>
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 relative z-10">
-              <div className="space-y-1">
-                <span className="text-xs text-casino-muted font-mono uppercase tracking-widest">Bet</span>
-                <input type="number" min={BC.minBet(currency)} step={BC.stepSize(currency)} value={betAmount} onChange={e => setBetAmount(e.target.value)}
-                  className="w-full bg-casino-surface border border-casino-border rounded-lg px-2 py-1.5 text-white font-mono text-sm focus:outline-none focus:border-gold/50" />
-                <div className="flex gap-1">
-                  <button onClick={halfBet} className="flex-1 bg-casino-surface border border-casino-border rounded px-1 py-0.5 text-xs text-casino-muted hover:text-white transition-colors">1/2</button>
-                  <button onClick={doubleBet} className="flex-1 bg-casino-surface border border-casino-border rounded px-1 py-0.5 text-xs text-casino-muted hover:text-white transition-colors">2x</button>
-                  <button onClick={maxBet} className="flex-1 bg-casino-surface border border-casino-border rounded px-1 py-0.5 text-xs text-casino-muted hover:text-white transition-colors">Max</button>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs text-casino-muted font-mono uppercase tracking-widest">Currency</span>
-                <select value={currency} onChange={e => setCurrency(e.target.value)}
-                  className="w-full bg-casino-surface border border-casino-border rounded-lg px-2 py-1.5 text-white font-mono text-sm focus:outline-none focus:border-gold/50">
-                  {CURRENCIES.map(c => <option key={c} value={c}>{c.replace("_", " ")}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <button onClick={handleDrop} disabled={dropping}
-              className="w-full py-2.5 rounded-xl font-bold text-sm transition-all bg-gradient-to-r from-gold to-yellow-500 text-black hover:shadow-lg hover:shadow-gold/20 disabled:opacity-50 disabled:cursor-not-allowed relative z-10">
-              {dropping ? "Dropping..." : "Drop Ball"}
-            </button>
+      <main className="plk-shell">
+        <aside className="plk-panel plk-left">
+          <div className="plk-brand">
+            <div className="plk-logo-gem">♦</div>
+            <div><h2>CRYPTO</h2><p>CASINO</p></div>
           </div>
-        </div>
 
-        <div className="space-y-4">
-          <BetHistory title="Plinko History" bets={history} onLoadMore={() => setHistoryPage(p => p + 1)} />
-        </div>
+          <div className="plk-group">
+            <label>BET AMOUNT</label>
+            <input type="number" min={BC.minBet(currency)} step={BC.stepSize(currency)} value={betAmount} onChange={e => setBetAmount(e.target.value)} />
+            <div className="plk-actions">
+              <button onClick={halfBet}>1/2</button>
+              <button onClick={doubleBet}>2X</button>
+              <button onClick={maxBet}>MAX</button>
+            </div>
+          </div>
+
+          <div className="plk-group">
+            <label>RISK LEVEL</label>
+            <div className="plk-actions">
+              {["low", "medium", "high"].map(r => (
+                <button key={r} onClick={() => setRisk(r)} className={risk === r ? "active" : ""}>{r.toUpperCase()}</button>
+              ))}
+            </div>
+          </div>
+
+          <div className="plk-group">
+            <label>ROWS</label>
+            <div className="plk-actions">
+              {[8, 12, 16].map(r => (
+                <button key={r} onClick={() => setRows(r)} className={rows === r ? "active" : ""}>{r}</button>
+              ))}
+            </div>
+          </div>
+
+          <div className="plk-group">
+            <label>CURRENCY</label>
+            <select value={currency} onChange={e => setCurrency(e.target.value)}>
+              {CURRENCIES.map(c => <option key={c} value={c}>{CURRENCY_LABEL[c]}</option>)}
+            </select>
+          </div>
+
+          <button onClick={handleDrop} disabled={dropping} className="plk-drop">{dropping ? "DROPPING..." : "DROP"}</button>
+          {error && <div className="plk-error">{error}</div>}
+          <div className="plk-balance">BALANCE: {Number(balances[currency] || 0).toFixed(6)}</div>
+        </aside>
+
+        <section className="plk-center">
+          <div className="plk-title">PLINKO</div>
+          <div className="plk-sub">DROP. BOUNCE. WIN BIG.</div>
+          <div className="plk-boardWrap">
+            <PlinkoBoard rows={rows} path={path} bucket={bucket} risk={risk} animating={animating} />
+            {result && !animating && (
+              <div className="plk-result">
+                <span>{result.multiplier}x</span>
+                <small>{result.profit >= 0 ? "+" : ""}{result.profit.toFixed(5)}</small>
+              </div>
+            )}
+          </div>
+          <div className="plk-buckets">
+            {(MULTIPLIERS[rows]?.[risk] || []).map((m, i) => (
+              <div key={`${m}-${i}`} className={bucket === i && !animating ? "hit" : ""}>{m}x</div>
+            ))}
+          </div>
+        </section>
+
+        <aside className="plk-panel plk-right">
+          <h3>RECENT WINS</h3>
+          <div className="plk-wins">
+            {history.slice(0, 8).map((h) => (
+              <div key={h.id || `${h.created_at}-${h.multiplier}`} className="plk-winRow">
+                <span>{Number(h.bet_amount || 0).toFixed(6)}</span>
+                <b>{h.multiplier}x</b>
+              </div>
+            ))}
+          </div>
+          <div className="plk-promo">BOUNCE TO THE MOON</div>
+          <button className="plk-load" onClick={() => setHistoryPage(p => p + 1)}>LOAD MORE</button>
+        </aside>
       </main>
+
+      <style jsx>{`
+        .plk-page{background:
+          radial-gradient(circle at 50% 0%, rgba(73,29,255,.35), transparent 35%),
+          linear-gradient(180deg,#06091f,#0a0423 50%,#090f2d)}
+        .plk-shell{width:min(1800px,100%);margin:0 auto;display:grid;grid-template-columns:320px 1fr 320px;gap:14px;padding:14px}
+        .plk-panel{background:linear-gradient(180deg,rgba(8,16,56,.82),rgba(5,8,29,.9));border:2px solid rgba(87,122,255,.6);border-radius:20px;padding:16px;box-shadow:0 0 35px rgba(76,35,255,.28)}
+        .plk-brand{display:flex;align-items:center;gap:12px;padding-bottom:12px;border-bottom:1px solid rgba(130,150,255,.25);margin-bottom:12px}
+        .plk-logo-gem{width:40px;height:40px;display:grid;place-items:center;border-radius:50%;background:radial-gradient(circle,#cb9bff,#6f28ff);font-size:22px}
+        .plk-brand h2{font-size:30px;font-weight:900;background:linear-gradient(#9cd2ff,#5d7aff);-webkit-background-clip:text;color:transparent;line-height:1}
+        .plk-brand p{color:#d26dff;font-weight:800}
+        .plk-group{margin-bottom:12px}.plk-group label{display:block;color:#c8d1ff;font-weight:800;font-size:12px;margin-bottom:6px}
+        .plk-group input,.plk-group select{width:100%;background:rgba(8,13,40,.8);border:1px solid rgba(114,132,255,.45);color:#fff;border-radius:10px;padding:10px;font-weight:700}
+        .plk-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+        .plk-actions button{border:1px solid rgba(140,98,255,.6);background:linear-gradient(#1d1145,#0d1234);color:#d5beff;padding:8px;border-radius:10px;font-weight:900}
+        .plk-actions button.active{color:#ffd83b;border-color:#ffbb3b;box-shadow:0 0 16px rgba(255,181,47,.4)}
+        .plk-drop{width:100%;margin-top:8px;padding:14px;border:none;border-radius:14px;font-size:38px;font-weight:900;letter-spacing:.05em;color:white;background:linear-gradient(180deg,#8a3bff,#4b19ce);box-shadow:0 0 26px rgba(158,81,255,.65)}
+        .plk-error{margin-top:8px;color:#ff9ea8;font-size:12px}.plk-balance{margin-top:12px;color:#7deef8;font-weight:700}
+        .plk-center{position:relative;padding:10px 10px 20px;border:2px solid rgba(100,136,255,.54);border-radius:24px;background:linear-gradient(180deg,rgba(8,12,40,.5),rgba(10,8,35,.4)),url('/assets/plinko/bg.jpg');background-size:cover}
+        .plk-title{text-align:center;font-size:clamp(48px,7vw,120px);font-weight:900;line-height:.9;letter-spacing:.05em;background:linear-gradient(#95f6ff,#6ea3ff 45%,#da64ff);-webkit-background-clip:text;color:transparent;text-shadow:0 0 24px rgba(120,217,255,.45)}
+        .plk-sub{text-align:center;margin-top:4px;color:#d4dcff;font-weight:800;letter-spacing:.08em}
+        .plk-boardWrap{position:relative;margin-top:10px;padding:18px;border-radius:20px;border:2px solid rgba(136,101,255,.55);background:radial-gradient(circle at 50% 20%,rgba(87,36,157,.28),rgba(5,7,24,.82))}
+        .plk-boardWrap :global(canvas){width:min(860px,100%);height:auto;display:block;margin:0 auto;filter:drop-shadow(0 0 24px rgba(159,94,255,.4))}
+        .plk-result{position:absolute;left:50%;top:12px;transform:translateX(-50%);text-align:center;color:#ffd64a;text-shadow:0 0 16px rgba(255,197,64,.8)}
+        .plk-result span{font-size:40px;font-weight:900;display:block}.plk-result small{font-size:16px;color:#73ffd1;font-weight:700}
+        .plk-buckets{margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(58px,1fr));gap:6px}
+        .plk-buckets div{padding:10px 0;border-radius:10px;text-align:center;font-weight:900;color:#7deeff;background:linear-gradient(180deg,rgba(22,55,145,.85),rgba(7,22,61,.8));border:1px solid rgba(91,179,255,.5)}
+        .plk-buckets div.hit{color:#201100;background:linear-gradient(180deg,#ffe26e,#ff991c);box-shadow:0 0 20px rgba(255,191,55,.8)}
+        .plk-right h3{color:#e2ebff;font-size:38px;font-weight:900;letter-spacing:.04em}
+        .plk-wins{margin-top:10px;display:grid;gap:8px}
+        .plk-winRow{display:flex;justify-content:space-between;padding:10px 12px;border-radius:10px;background:rgba(8,13,44,.7);border:1px solid rgba(99,141,255,.35);font-family:monospace;color:#d5e0ff}
+        .plk-winRow b{color:#ffd146}
+        .plk-promo{margin-top:12px;min-height:140px;display:grid;place-items:center;border-radius:16px;border:1px solid rgba(128,84,255,.45);background:linear-gradient(180deg,rgba(23,34,102,.5),rgba(11,7,43,.6)),url('/assets/plinko/promo.png');background-size:cover;color:#93d7ff;font-size:30px;font-weight:900;text-align:center}
+        .plk-load{margin-top:10px;width:100%;padding:10px;border-radius:10px;border:1px solid rgba(121,156,255,.55);background:rgba(13,20,61,.72);color:#dbe4ff;font-weight:700}
+        @media (max-width:1200px){.plk-shell{grid-template-columns:1fr}.plk-right h3{font-size:26px}}
+      `}</style>
     </div>
   );
 }

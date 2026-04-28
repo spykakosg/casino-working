@@ -16,7 +16,7 @@ export function isCrypto(currency) {
 }
 
 export function betDecimals(currency) {
-  return isCrypto(currency) ? 8 : 3;
+  return isCrypto(currency) ? 8 : 2;
 }
 
 export function displayDecimals(currency) {
@@ -24,15 +24,17 @@ export function displayDecimals(currency) {
 }
 
 export function minBet(currency) {
-  return isCrypto(currency) ? 0.00000001 : 0.001;
+  return isCrypto(currency) ? 0.00000001 : 0.1;
 }
 
 export function defaultBet(currency) {
-  return isCrypto(currency) ? "0.00001" : "1";
+  if (currency === "BTC") return "0.00001";
+  if (currency === "ETH_POLYGON") return "0.0004";
+  return "1";
 }
 
 export function stepSize(currency) {
-  return isCrypto(currency) ? 0.00000001 : 1;
+  return isCrypto(currency) ? 0.00000001 : 0.1;
 }
 
 export function maxBetForCurrency(currency) {
