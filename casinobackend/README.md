@@ -89,6 +89,26 @@ WALLET_MNEMONIC=  ← generate with: node -e "const {ethers}=require('ethers'); 
 
 For ALCHEMY_POLYGON_URL: sign up free at https://alchemy.com, create a Polygon app, copy the HTTPS URL.
 
+### Optional: Testnet mode (recommended before mainnet)
+
+Add these to `.env`:
+
+```
+TESTNET_MODE=true
+TESTNET_EVM_RPC_URL=https://rpc-amoy.polygon.technology
+TESTNET_USDT_CONTRACT=0x...   # your Amoy test USDT contract
+BTC_EXPLORER_BASE_URL=https://blockstream.info/testnet/api
+
+# For real testnet payouts from withdrawalWorker
+PAYOUT_PROVIDER=testnet
+TESTNET_PAYOUT_PRIVATE_KEY=0x...
+```
+
+Notes:
+- In testnet mode, deposit watcher uses `TESTNET_EVM_RPC_URL` instead of `ALCHEMY_POLYGON_URL`.
+- BTC testnet deposits are supported via testnet explorer URL.
+- BTC testnet withdrawals are not yet implemented in worker (ETH/USDT testnet withdrawals are implemented).
+
 ### Step 5 — Run the database schema
 
 ```powershell

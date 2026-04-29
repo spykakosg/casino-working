@@ -6,6 +6,7 @@
  */
 
 require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env") });
+const { ethers } = require("ethers");
 const pool = require("../db/pool");
 
 const POLL_MS = parseInt(process.env.WITHDRAWAL_WORKER_POLL_MS || "5000", 10);
@@ -27,6 +28,41 @@ async function executePayout(withdrawal) {
       txHash: `stub_${withdrawal.id}_${Date.now()}`,
       provider,
     };
+  }
+
+  if (provider === "testnet") {
+    const isTestnet = String(process.env.TESTNET_MODE || "").toLowerCase() === "true";
+    if (!isTestnet) throw new Error("PAYOUT_PROVIDER=testnet requires TESTNET_MODE=true");
+    const rpcUrl = process.env.TESTNET_EVM_RPC_URL;
+    const signerKey = process.env.TESTNET_PAYOUT_PRIVATE_KEY;
+    if (!rpcUrl || !signerKey) {
+      throw new Error("Missing TESTNET_EVM_RPC_URL or TESTNET_PAYOUT_PRIVATE_KEY");
+    }
+
+    if (withdrawal.currency === "ETH_POLYGON") {
+      const rpc = new ethers.JsonRpcProvider(rpcUrl);
+      const signer = new ethers.Wallet(signerKey, rpc);
+      const tx = await signer.sendTransaction({
+        to: withdrawal.to_address,
+        value: ethers.parseEther(String(withdrawal.amount)),
+      });
+      return { txHash: tx.hash, provider };
+    }
+
+    if (withdrawal.currency === "USDT") {
+      const usdt = process.env.TESTNET_USDT_CONTRACT;
+      if (!usdt) throw new Error("Missing TESTNET_USDT_CONTRACT for USDT withdrawals");
+      const rpc = new ethers.JsonRpcProvider(rpcUrl);
+      const signer = new ethers.Wallet(signerKey, rpc);
+      const erc20 = new ethers.Contract(usdt, ["function transfer(address to, uint256 amount) returns (bool)", "function decimals() view returns (uint8)"], signer);
+      const decimals = await erc20.decimals();
+      const tx = await erc20.transfer(withdrawal.to_address, ethers.parseUnits(String(withdrawal.amount), decimals));
+      return { txHash: tx.hash, provider };
+    }
+
+    if (withdrawal.currency === "BTC") {
+      throw new Error("BTC testnet withdrawals not yet implemented. Use stub or add BTC broadcaster integration.");
+    }
   }
 
   throw new Error(`Unsupported PAYOUT_PROVIDER: ${provider}`);

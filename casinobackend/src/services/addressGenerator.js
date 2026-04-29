@@ -88,11 +88,14 @@ function deriveBTCAddress(index) {
 
   try {
     const seed = bip39.mnemonicToSeedSync(mnemonic);
-    const root = bip32.fromSeed(seed, bitcoin.networks.bitcoin);
-    const child = root.derivePath(`m/84'/0'/0'/0/${index}`);
+    const isTestnet = String(process.env.TESTNET_MODE || "").toLowerCase() === "true";
+    const network = isTestnet ? bitcoin.networks.testnet : bitcoin.networks.bitcoin;
+    const coinType = isTestnet ? 1 : 0;
+    const root = bip32.fromSeed(seed, network);
+    const child = root.derivePath(`m/84'/${coinType}'/0'/0/${index}`);
     const payment = bitcoin.payments.p2wpkh({
       pubkey: Buffer.from(child.publicKey),
-      network: bitcoin.networks.bitcoin,
+      network,
     });
     return payment.address || fallback;
   } catch (err) {
