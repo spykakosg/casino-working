@@ -120,8 +120,9 @@ async function generateAddressForUser(userId) {
       { currency: "BTC", address: deriveBTCAddress(baseIndex + 3) },
     ];
 
+    let updatedRows = 0;
     for (const { currency, address } of currencies) {
-      await client.query(
+      const updateRes = await client.query(
         `UPDATE wallets SET deposit_address = $1
          WHERE user_id = $2
            AND currency = $3
@@ -133,11 +134,14 @@ async function generateAddressForUser(userId) {
            )`,
         [address, userId, currency]
       );
+      updatedRows += updateRes.rowCount;
     }
 
     await client.query("COMMIT");
-    console.log(`✅ Assigned deposit addresses to user ${userId}`);
-    return currencies;
+    if (updatedRows > 0) {
+      console.log(`✅ Assigned deposit addresses to user ${userId} (${updatedRows} wallet row(s) updated)`);
+    }
+    return { currencies, updatedRows };
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;
@@ -151,7 +155,10 @@ async function generateAddressForUser(userId) {
  */
 async function backfillAddresses() {
   const result = await pool.query(
-    `SELECT DISTINCT user_id FROM wallets WHERE deposit_address IS NULL`
+    `SELECT DISTINCT user_id
+     FROM wallets
+     WHERE deposit_address IS NULL
+       AND currency IN ('USDT', 'USDT_POLYGON', 'ETH_POLYGON', 'BTC')`
   );
 
   console.log(`Assigning addresses to ${result.rows.length} users...`);
@@ -168,14 +175,19 @@ async function backfillAddresses() {
  */
 async function ensureAllDepositAddresses() {
   const result = await pool.query(
-    `SELECT DISTINCT user_id FROM wallets WHERE deposit_address IS NULL`
+    `SELECT DISTINCT user_id
+     FROM wallets
+     WHERE deposit_address IS NULL
+       AND currency IN ('USDT', 'USDT_POLYGON', 'ETH_POLYGON', 'BTC')`
   );
 
+  let changedUsers = 0;
   for (const row of result.rows) {
-    await generateAddressForUser(row.user_id);
+    const changed = await generateAddressForUser(row.user_id);
+    if (changed.updatedRows > 0) changedUsers += 1;
   }
 
-  return result.rows.length;
+  return changedUsers;
 }
 
 // Run if called directly
