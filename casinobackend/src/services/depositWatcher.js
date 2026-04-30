@@ -16,6 +16,7 @@ require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env"
 const { ethers } = require("ethers");
 const pool = require("../db/pool");
 const { ensureAllDepositAddresses } = require("./addressGenerator");
+const { isTestnet, getEvmRpcUrl, getBtcExplorerBaseUrl, getUsdtContract } = require("../config/networkMode");
 
 const CONFIRMATIONS_REQUIRED = {
   USDT: 2,
@@ -23,9 +24,8 @@ const CONFIRMATIONS_REQUIRED = {
   BTC: 3,
 };
 
-const IS_TESTNET = String(process.env.TESTNET_MODE || "").toLowerCase() === "true";
-// Mainnet default; override in testnet with TESTNET_USDT_CONTRACT
-const USDT_CONTRACT = process.env.TESTNET_USDT_CONTRACT || "0xc2132D05D31c914a87C6611C10748AEb04B58e8F";
+const IS_TESTNET = isTestnet;
+const USDT_CONTRACT = getUsdtContract();
 // ERC-20 Transfer event ABI (minimal)
 const ERC20_ABI = [
   "event Transfer(address indexed from, address indexed to, uint256 value)",
@@ -33,7 +33,7 @@ const ERC20_ABI = [
 ];
 
 function hasUsableAlchemyUrl() {
-  const url = (IS_TESTNET ? process.env.TESTNET_EVM_RPC_URL : process.env.ALCHEMY_POLYGON_URL || "").trim();
+  const url = getEvmRpcUrl();
   if (!url) return false;
   if (url.includes("YOUR_ALCHEMY_KEY")) return false;
   return true;
@@ -52,11 +52,15 @@ async function watchPolygon() {
     return;
   }
 
-  const evmRpcUrl = IS_TESTNET ? process.env.TESTNET_EVM_RPC_URL : process.env.ALCHEMY_POLYGON_URL;
+  const evmRpcUrl = getEvmRpcUrl();
   const provider = new ethers.JsonRpcProvider(evmRpcUrl);
+  if (IS_TESTNET && !USDT_CONTRACT) {
+    console.warn("⚠️  TESTNET_USDT_CONTRACT not set — USDT transfer watcher disabled in testnet mode");
+    return;
+  }
   const usdtContract = new ethers.Contract(USDT_CONTRACT, ERC20_ABI, provider);
 
-  console.log(`👁  Watching ${IS_TESTNET ? "EVM testnet" : "Polygon"} (ETH + USDT)...`);
+  console.log(`👁  Watching ${IS_TESTNET ? "EVM testnet" : "Polygon mainnet"} (ETH + USDT)...`);
 
   // Watch USDT transfers
   usdtContract.on("Transfer", async (from, to, value) => {

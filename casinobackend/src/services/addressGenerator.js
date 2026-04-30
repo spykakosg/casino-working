@@ -20,6 +20,7 @@
 require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env") });
 const { ethers } = require("ethers");
 const pool = require("../db/pool");
+const { isTestnet } = require("../config/networkMode");
 
 let hasWarnedInvalidMnemonic = false;
 let hasWarnedMissingBtcDeps = false;
@@ -75,7 +76,7 @@ function deriveEVMAddress(index) {
 }
 
 function deriveBTCAddress(index) {
-  const fallback = `bc1q_placeholder_${index}`;
+  const fallback = `${isTestnet ? 'tb1' : 'bc1'}q_placeholder_${index}`;
   if (!bitcoin || !bip32 || !bip39) {
     if (!hasWarnedMissingBtcDeps) {
       hasWarnedMissingBtcDeps = true;
@@ -88,7 +89,6 @@ function deriveBTCAddress(index) {
 
   try {
     const seed = bip39.mnemonicToSeedSync(mnemonic);
-    const isTestnet = String(process.env.TESTNET_MODE || "").toLowerCase() === "true";
     const network = isTestnet ? bitcoin.networks.testnet : bitcoin.networks.bitcoin;
     const coinType = isTestnet ? 1 : 0;
     const root = bip32.fromSeed(seed, network);

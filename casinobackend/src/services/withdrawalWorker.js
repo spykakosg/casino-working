@@ -8,6 +8,7 @@
 require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env") });
 const { ethers } = require("ethers");
 const pool = require("../db/pool");
+const { isTestnet, getEvmRpcUrl, getUsdtContract } = require("../config/networkMode");
 
 const POLL_MS = parseInt(process.env.WITHDRAWAL_WORKER_POLL_MS || "5000", 10);
 const MAX_ATTEMPTS = parseInt(process.env.WITHDRAWAL_MAX_ATTEMPTS || "5", 10);
@@ -31,9 +32,8 @@ async function executePayout(withdrawal) {
   }
 
   if (provider === "testnet") {
-    const isTestnet = String(process.env.TESTNET_MODE || "").toLowerCase() === "true";
     if (!isTestnet) throw new Error("PAYOUT_PROVIDER=testnet requires TESTNET_MODE=true");
-    const rpcUrl = process.env.TESTNET_EVM_RPC_URL;
+    const rpcUrl = getEvmRpcUrl();
     const signerKey = process.env.TESTNET_PAYOUT_PRIVATE_KEY;
     if (!rpcUrl || !signerKey) {
       throw new Error("Missing TESTNET_EVM_RPC_URL or TESTNET_PAYOUT_PRIVATE_KEY");
@@ -50,7 +50,7 @@ async function executePayout(withdrawal) {
     }
 
     if (withdrawal.currency === "USDT") {
-      const usdt = process.env.TESTNET_USDT_CONTRACT;
+      const usdt = getUsdtContract();
       if (!usdt) throw new Error("Missing TESTNET_USDT_CONTRACT for USDT withdrawals");
       const rpc = new ethers.JsonRpcProvider(rpcUrl);
       const signer = new ethers.Wallet(signerKey, rpc);
