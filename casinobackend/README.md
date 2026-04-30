@@ -209,3 +209,47 @@ npm test
 ```sql
 UPDATE users SET role = 'admin' WHERE username = 'yourusername';
 ```
+
+
+## Alternative implementation options
+
+If the current all-in-one implementation feels too complex, here are simpler ways to ship the same capabilities incrementally:
+
+1. **Phase features behind flags**
+   - Keep existing routes/UI hidden behind env-based feature flags.
+   - Roll out one domain at a time (`referrals`, then `account recovery`, then `withdrawal queue`).
+
+2. **Use managed providers first, then self-host**
+   - Email verification/reset: use Auth0/Firebase/Supabase auth flows instead of custom token tables.
+   - Leaderboards/referrals: use a managed analytics store or Redis sorted sets before a full relational design.
+
+3. **Replace worker queue with a cron-based puller (short term)**
+   - Instead of a continuously running worker, run a scheduled job every minute to process pending withdrawals.
+   - This reduces operational complexity while preserving auditability and retries.
+
+4. **Split PRs by risk area**
+   - PR A: DB schema + migrations only.
+   - PR B: backend APIs only.
+   - PR C: frontend pages/components only.
+   - PR D: blockchain integrations and job worker only.
+
+5. **Keep blockchain integrations adapter-only until production readiness**
+   - Ship interfaces and mock adapters first.
+   - Add BTC/EVM concrete implementations once secrets, providers, monitoring, and reconciliation playbooks are in place.
+
+6. **Start with read-only community features**
+   - Launch leaderboard/provably-fair verifier first (low risk), then referrals payouts after monitoring and abuse controls are validated.
+
+7. **Prefer existing queue technology**
+   - Use BullMQ/SQS/Cloud Tasks instead of custom SQL job-claiming logic if your team already supports one queue platform.
+
+8. **Move anti-abuse to perimeter controls**
+   - Keep in-app limits minimal.
+   - Offload rate limits/challenges to API gateway/WAF for consistency and easier tuning.
+
+9. **Adopt “minimal viable recovery”**
+   - Implement password reset first.
+   - Add email verification enforcement later (e.g., only required at withdrawal time).
+
+10. **Introduce formal acceptance criteria per feature**
+   - For each domain, define “done” checks (unit/integration tests + runbook + observability signals) before enabling in production.
