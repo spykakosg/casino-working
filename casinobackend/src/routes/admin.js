@@ -30,7 +30,7 @@ router.use(auth, adminOnly);
 // ─── Platform Stats ───────────────────────────────────────────────────────────
 router.get("/stats", async (req, res) => {
   try {
-    const [usersRes, betsRes, dailyBetsRes, depositRes, withdrawalRes] = await Promise.all([
+    const [usersRes, betsRes, dailyBetsRes, depositRes, withdrawalRes, pnlByCurrencyRes, dailyPnlByCurrencyRes, byGameRes, trendRes] = await Promise.all([
       req.db.query("SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '24h') AS last_24h FROM users"),
       req.db.query(`SELECT COUNT(*) AS total_bets,
                           SUM(bet_amount) AS total_wagered,
@@ -44,7 +44,52 @@ router.get("/stats", async (req, res) => {
                    FROM bets WHERE created_at >= CURRENT_DATE`),
       req.db.query("SELECT currency, SUM(amount) AS total FROM deposits WHERE status = 'confirmed' GROUP BY currency"),
       req.db.query("SELECT COUNT(*) AS pending FROM withdrawals WHERE status = 'pending'"),
+      req.db.query(`SELECT currency, COALESCE(-SUM(profit), 0) AS house_profit
+                   FROM bets
+                   WHERE currency IN ('BTC', 'ETH_POLYGON')
+                   GROUP BY currency`),
+      req.db.query(`SELECT currency, COALESCE(-SUM(profit), 0) AS house_profit
+                   FROM bets
+                   WHERE currency IN ('BTC', 'ETH_POLYGON')
+                     AND created_at >= CURRENT_DATE
+                   GROUP BY currency`),
+      req.db.query(`SELECT game,
+                          COALESCE(SUM(bet_amount), 0) AS total_wagered,
+                          COALESCE(SUM(payout), 0) AS total_payout,
+                          COALESCE(-SUM(profit), 0) AS house_profit
+                   FROM bets
+                   GROUP BY game
+                   ORDER BY total_wagered DESC`),
+      req.db.query(`SELECT to_char(day, 'YYYY-MM-DD') AS day,
+                          COALESCE(SUM(bet_amount), 0) AS wagered,
+                          COALESCE(SUM(payout), 0) AS payout,
+                          COALESCE(-SUM(profit), 0) AS house_profit
+                   FROM (
+                     SELECT generate_series(current_date - interval '6 day', current_date, interval '1 day')::date AS day
+                   ) d
+                   LEFT JOIN bets b ON b.created_at::date = d.day
+                   GROUP BY day
+                   ORDER BY day ASC`),
     ]);
+
+    const byGame = byGameRes.rows.map((row) => {
+      const wagered = parseFloat(row.total_wagered || 0);
+      const payout = parseFloat(row.total_payout || 0);
+      const houseProfit = parseFloat(row.house_profit || 0);
+      const edgePct = wagered > 0 ? (houseProfit / wagered) * 100 : 0;
+      return { game: row.game, wagered, payout, houseProfit, edgePct };
+    });
+
+    const payoutTrend = trendRes.rows.map((row) => ({
+      day: row.day,
+      wagered: parseFloat(row.wagered || 0),
+      payout: parseFloat(row.payout || 0),
+      houseProfit: parseFloat(row.house_profit || 0),
+    }));
+
+    const pnlByCurrency = { allTime: { BTC: 0, ETH_POLYGON: 0 }, daily: { BTC: 0, ETH_POLYGON: 0 } };
+    for (const row of pnlByCurrencyRes.rows) pnlByCurrency.allTime[row.currency] = parseFloat(row.house_profit || 0);
+    for (const row of dailyPnlByCurrencyRes.rows) pnlByCurrency.daily[row.currency] = parseFloat(row.house_profit || 0);
 
     return res.json({
       users: {
@@ -65,6 +110,8 @@ router.get("/stats", async (req, res) => {
       },
       deposits: depositRes.rows,
       pendingWithdrawals: parseInt(withdrawalRes.rows[0].pending),
+      pnlByCurrency,
+      reconciliation: { byGame, payoutTrend },
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -260,7 +307,7 @@ router.get("/withdrawals/pending", async (req, res) => {
 
 // ─── Approve / Reject Withdrawal ─────────────────────────────────────────────
 router.put("/withdrawals/:id", async (req, res) => {
-  const { action, txHash } = req.body; // action: "approve" | "reject"
+  const { action } = req.body; // action: "approve" | "reject"
 
   if (!["approve", "reject"].includes(action)) {
     return res.status(400).json({ error: "action must be 'approve' or 'reject'" });
@@ -283,8 +330,17 @@ router.put("/withdrawals/:id", async (req, res) => {
 
     if (action === "approve") {
       await client.query(
-        `UPDATE withdrawals SET status = 'sent', tx_hash = $1, processed_at = NOW() WHERE id = $2`,
-        [txHash || null, wd.id]
+        `UPDATE withdrawals
+         SET status = 'processing'
+         WHERE id = $1`,
+        [wd.id]
+      );
+      await client.query(
+        `INSERT INTO withdrawal_jobs (withdrawal_id, status)
+         VALUES ($1, 'queued')
+         ON CONFLICT (withdrawal_id)
+         DO UPDATE SET status = 'queued', last_error = NULL, next_retry_at = NOW(), updated_at = NOW()`,
+        [wd.id]
       );
     } else {
       // Reject — refund balance

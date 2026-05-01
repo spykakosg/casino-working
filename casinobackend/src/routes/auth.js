@@ -18,6 +18,9 @@ const auth = require("../middleware/auth");
 
 const SUPPORTED_CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
 const SALT_ROUNDS = 12;
+const FAILED_LOGIN_LIMIT = 10;
+const FAILED_LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const failedLoginAttempts = new Map();
 
 function normalizeCurrency(currency) {
   return ["USDT", "USDT_POLYGON", "USDT_TRON"].includes(currency) ? "USDT" : currency;
@@ -37,7 +40,7 @@ function signToken(user) {
 
 // ─── Register ─────────────────────────────────────────────────────────────────
 router.post("/register", async (req, res) => {
-  const { username, email, password } = req.body;
+  const { username, email, password, referralCode } = req.body;
 
   if (!username || !password) {
     return res.status(400).json({ error: "username and password are required" });
@@ -70,14 +73,15 @@ router.post("/register", async (req, res) => {
 
     // Create user
     const userRes = await client.query(
-      `INSERT INTO users (username, email, password_hash)
-       VALUES ($1, $2, $3)
+      `INSERT INTO users (username, email, password_hash, referred_by_code)
+       VALUES ($1, $2, $3, $4)
        RETURNING id, username, email, role, created_at`,
-      [username.toLowerCase(), email || null, passwordHash]
+      [username.toLowerCase(), email || null, passwordHash, referralCode || null]
     );
     const user = userRes.rows[0];
 
     // Create a wallet for each supported currency
+
     for (const currency of SUPPORTED_CURRENCIES) {
       const serverSeed = generateServerSeed();
       const clientSeed = generateClientSeed();
@@ -88,7 +92,41 @@ router.post("/register", async (req, res) => {
       );
     }
 
+
+    await client.query(`CREATE TABLE IF NOT EXISTS referral_codes (
+      id BIGSERIAL PRIMARY KEY,
+      user_id INTEGER UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      code VARCHAR(32) UNIQUE NOT NULL,
+      uses_count INTEGER NOT NULL DEFAULT 0,
+      bonus_credits NUMERIC(28, 8) NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+
+    // Ensure each user has one permanent affiliate code
+    const existingCode = await client.query(`SELECT code FROM referral_codes WHERE user_id = $1`, [user.id]);
+    if (!existingCode.rows[0]) {
+      let code = require("crypto").randomBytes(4).toString("hex").toUpperCase();
+      for (let i = 0; i < 5; i += 1) {
+        try {
+          await client.query(`INSERT INTO referral_codes (user_id, code) VALUES ($1, $2)`, [user.id, code]);
+          break;
+        } catch (err) {
+          if (err.code !== "23505") throw err;
+          code = require("crypto").randomBytes(4).toString("hex").toUpperCase();
+        }
+      }
+    }
+
     await client.query("COMMIT");
+
+    const ipAddress = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || null;
+    const userAgent = req.headers["user-agent"] || null;
+    await req.db.query(
+      `INSERT INTO sessions (user_id, ip_address, user_agent, expires_at)
+       VALUES ($1, $2, $3, NOW() + INTERVAL '7 day')`,
+      [user.id, ipAddress, userAgent]
+    );
+
 
     const token = signToken(user);
     return res.status(201).json({
@@ -110,6 +148,23 @@ router.post("/register", async (req, res) => {
   }
 });
 
+
+function getLoginAttemptKey(username, req) {
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "unknown";
+  return `${username.toLowerCase()}::${ip}`;
+}
+
+function getAttemptsRecord(key) {
+  const now = Date.now();
+  const rec = failedLoginAttempts.get(key);
+  if (!rec || now - rec.firstAt > FAILED_LOGIN_WINDOW_MS) {
+    const fresh = { count: 0, firstAt: now };
+    failedLoginAttempts.set(key, fresh);
+    return fresh;
+  }
+  return rec;
+}
+
 // ─── Login ────────────────────────────────────────────────────────────────────
 router.post("/login", async (req, res) => {
   const { username, password } = req.body;
@@ -119,12 +174,19 @@ router.post("/login", async (req, res) => {
   }
 
   try {
+    const attemptKey = getLoginAttemptKey(username, req);
+    const attempts = getAttemptsRecord(attemptKey);
+    if (attempts.count >= FAILED_LOGIN_LIMIT) {
+      return res.status(429).json({ error: "Too many failed login attempts. Try again in 15 minutes." });
+    }
+
     const userRes = await req.db.query(
       "SELECT id, username, email, password_hash, role, is_banned FROM users WHERE username = $1",
       [username.toLowerCase()]
     );
 
     if (userRes.rows.length === 0) {
+      attempts.count += 1;
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
@@ -136,8 +198,12 @@ router.post("/login", async (req, res) => {
 
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) {
+      attempts.count += 1;
       return res.status(401).json({ error: "Invalid credentials" });
     }
+
+    failedLoginAttempts.delete(attemptKey);
+
 
     const token = signToken(user);
     return res.json({

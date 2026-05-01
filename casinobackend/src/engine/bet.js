@@ -44,6 +44,58 @@ async function getLockedWallet(client, userId, currency) {
   return walletRes.rows[0] || null;
 }
 
+
+async function applyReferralCommission(client, userId, currency, betAmount, game) {
+  const referredRes = await client.query(
+    `SELECT referred_by_code FROM users WHERE id = $1`,
+    [userId]
+  );
+  const referredByCode = referredRes.rows[0]?.referred_by_code;
+  if (!referredByCode) return;
+
+  const refRes = await client.query(
+    `SELECT user_id FROM referral_codes WHERE code = $1`,
+    [referredByCode]
+  );
+  if (!refRes.rows[0]) return;
+
+  const monthlyRes = await client.query(
+    `SELECT COALESCE(SUM(bet_amount), 0) AS total
+     FROM bets
+     WHERE user_id = $1
+       AND created_at >= date_trunc('month', NOW())`,
+    [userId]
+  );
+  const monthlyWager = parseFloat(monthlyRes.rows[0]?.total || 0);
+
+  let rate = 0.25;
+  if (monthlyWager >= 5000) rate = 0.35;
+  if (monthlyWager >= 25000) rate = 0.5;
+
+  const commissionAmount = parseFloat(((betAmount * rate) / 100).toFixed(8));
+  if (commissionAmount <= 0) return;
+
+  await client.query(
+    `UPDATE wallets
+     SET balance = balance + $1
+     WHERE user_id = $2 AND currency = $3`,
+    [commissionAmount, refRes.rows[0].user_id, currency]
+  );
+
+  await client.query(
+    `UPDATE referral_codes
+     SET bonus_credits = bonus_credits + $1
+     WHERE code = $2`,
+    [commissionAmount, referredByCode]
+  );
+
+  await client.query(
+    `INSERT INTO referral_earnings (referrer_user_id, referred_user_id, currency, game, wager_amount, commission_rate, commission_amount)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [refRes.rows[0].user_id, userId, currency, game, betAmount, rate, commissionAmount]
+  );
+}
+
 /**
  * Place a dice bet
  *
@@ -134,6 +186,8 @@ async function placeDiceBet(db, { userId, currency, betAmount, target, direction
     );
 
     // 8. Read updated balance
+    await applyReferralCommission(client, userId, currency, betAmount, "dice");
+
     const updatedWallet = await client.query(
       `SELECT balance FROM wallets WHERE id = $1`,
       [wallet.id]
@@ -240,6 +294,9 @@ async function placeRouletteBet(db, { userId, currency, betAmount, betType, betV
        result.result, result.multiplier, hashServerSeed(wallet.server_seed), wallet.client_seed, wallet.nonce]
     );
 
+    await applyReferralCommission(client, userId, currency, betAmount, "roulette");
+
+
     const updatedWallet = await client.query(`SELECT balance FROM wallets WHERE id = $1`, [wallet.id]);
     await client.query("COMMIT");
     return { betId: betRes.rows[0].id, ...result, newBalance: parseFloat(updatedWallet.rows[0].balance), currency };
@@ -283,6 +340,8 @@ async function placeBlackjackBet(db, { userId, currency, betAmount, actions }) {
        result.multiplier, hashServerSeed(wallet.server_seed), wallet.client_seed, wallet.nonce]
     );
 
+    await applyReferralCommission(client, userId, currency, result.betAmount, "blackjack");
+
     const updatedWallet = await client.query(`SELECT balance FROM wallets WHERE id = $1`, [wallet.id]);
     await client.query("COMMIT");
     return { betId: betRes.rows[0].id, ...result, newBalance: parseFloat(updatedWallet.rows[0].balance), currency };
@@ -320,6 +379,8 @@ async function placePlinkoBet(db, { userId, currency, betAmount, rows, risk }) {
       [userId, currency, "plinko", betAmount, result.payout, result.profit, result.won,
        result.multiplier, hashServerSeed(wallet.server_seed), wallet.client_seed, wallet.nonce]
     );
+
+    await applyReferralCommission(client, userId, currency, betAmount, "plinko");
 
     const updatedWallet = await client.query(`SELECT balance FROM wallets WHERE id = $1`, [wallet.id]);
     await client.query("COMMIT");
@@ -359,6 +420,8 @@ async function placeLimboBet(db, { userId, currency, betAmount, target }) {
        result.multiplier, result.result, hashServerSeed(wallet.server_seed), wallet.client_seed, wallet.nonce]
     );
 
+    await applyReferralCommission(client, userId, currency, betAmount, "limbo");
+
     const updatedWallet = await client.query(`SELECT balance FROM wallets WHERE id = $1`, [wallet.id]);
     await client.query("COMMIT");
     return { betId: betRes.rows[0].id, ...result, newBalance: parseFloat(updatedWallet.rows[0].balance), currency };
@@ -396,6 +459,8 @@ async function placeSlotsBet(db, { userId, currency, betAmount }) {
       [userId, currency, "slots", betAmount, result.payout, result.profit, result.won,
        result.multiplier, hashServerSeed(wallet.server_seed), wallet.client_seed, wallet.nonce]
     );
+
+    await applyReferralCommission(client, userId, currency, betAmount, "slots");
 
     const updatedWallet = await client.query(`SELECT balance FROM wallets WHERE id = $1`, [wallet.id]);
     await client.query("COMMIT");

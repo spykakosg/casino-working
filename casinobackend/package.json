@@ -8,11 +8,15 @@
     "dev": "nodemon src/app.js",
     "test": "jest --runInBand",
     "watcher": "node src/services/depositWatcher.js",
+    "withdrawal-worker": "node src/services/withdrawalWorker.js",
     "gen-addresses": "node src/services/addressGenerator.js",
     "db:migrate": "node -e \"require('dotenv').config(); const {execSync}=require('child_process'); execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/schema.sql', {stdio:'inherit'})\""
   },
   "dependencies": {
+    "bip32": "^5.0.0",
+    "bip39": "^3.1.0",
     "bcryptjs": "^3.0.3",
+    "bitcoinjs-lib": "^6.1.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "ethers": "^6.13.1",
@@ -21,6 +25,7 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.12.0",
+    "tiny-secp256k1": "^2.2.4",
     "ws": "^8.20.0"
   },
   "devDependencies": {

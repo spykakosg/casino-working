@@ -72,6 +72,42 @@ CREATE INDEX idx_deposits_user ON deposits(user_id);
 CREATE INDEX idx_deposits_tx_hash ON deposits(tx_hash);
 CREATE INDEX idx_deposits_status ON deposits(status);
 
+
+
+-- ============================================================
+-- CRASH GAME TABLES
+-- ============================================================
+CREATE TABLE IF NOT EXISTS crash_rounds (
+  id              BIGSERIAL PRIMARY KEY,
+  server_seed     TEXT,
+  server_seed_hash TEXT NOT NULL,
+  crash_point     NUMERIC(12, 4),
+  status          VARCHAR(16) NOT NULL DEFAULT 'waiting', -- waiting | running | crashed
+  started_at      TIMESTAMPTZ,
+  crashed_at      TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_crash_rounds_status ON crash_rounds(status);
+CREATE INDEX IF NOT EXISTS idx_crash_rounds_created ON crash_rounds(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS crash_bets (
+  id              BIGSERIAL PRIMARY KEY,
+  round_id        BIGINT NOT NULL REFERENCES crash_rounds(id) ON DELETE CASCADE,
+  user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  currency        VARCHAR(20) NOT NULL,
+  bet_amount      NUMERIC(28, 8) NOT NULL,
+  auto_cashout    NUMERIC(12, 4),
+  cashout_at      NUMERIC(12, 4),
+  payout          NUMERIC(28, 8) NOT NULL DEFAULT 0,
+  won             BOOLEAN NOT NULL DEFAULT false,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (round_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_crash_bets_user ON crash_bets(user_id);
+CREATE INDEX IF NOT EXISTS idx_crash_bets_round ON crash_bets(round_id);
+
 -- ============================================================
 -- WITHDRAWALS
 -- ============================================================
@@ -91,6 +127,26 @@ CREATE TABLE withdrawals (
 
 CREATE INDEX idx_withdrawals_user ON withdrawals(user_id);
 CREATE INDEX idx_withdrawals_status ON withdrawals(status);
+
+-- ============================================================
+-- WITHDRAWAL JOBS (payout queue / retry state machine)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS withdrawal_jobs (
+  id              BIGSERIAL PRIMARY KEY,
+  withdrawal_id   INTEGER UNIQUE NOT NULL REFERENCES withdrawals(id) ON DELETE CASCADE,
+  status          VARCHAR(16) NOT NULL DEFAULT 'queued', -- queued | processing | sent | failed
+  attempts        INTEGER NOT NULL DEFAULT 0,
+  next_retry_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  tx_hash         TEXT UNIQUE,
+  last_error      TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  processed_at    TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_withdrawal_jobs_status_retry
+  ON withdrawal_jobs(status, next_retry_at);
+
 
 -- ============================================================
 -- BETS
@@ -159,3 +215,65 @@ CREATE TRIGGER trg_users_updated_at
 CREATE TRIGGER trg_wallets_updated_at
   BEFORE UPDATE ON wallets
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+CREATE TRIGGER trg_withdrawal_jobs_updated_at
+  BEFORE UPDATE ON withdrawal_jobs
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================================
+-- SECURITY / ACCOUNT RECOVERY / REFERRALS
+-- ============================================================
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by_code TEXT;
+
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+  id          BIGSERIAL PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token       TEXT UNIQUE NOT NULL,
+  used_at     TIMESTAMPTZ,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id          BIGSERIAL PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token       TEXT UNIQUE NOT NULL,
+  used_at     TIMESTAMPTZ,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS referral_codes (
+  id            BIGSERIAL PRIMARY KEY,
+  user_id        INTEGER UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code           VARCHAR(32) UNIQUE NOT NULL,
+  uses_count      INTEGER NOT NULL DEFAULT 0,
+  bonus_credits   NUMERIC(28, 8) NOT NULL DEFAULT 0,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id          BIGSERIAL PRIMARY KEY,
+  user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  ip_address  INET,
+  user_agent  TEXT,
+  route       TEXT NOT NULL,
+  method      VARCHAR(10) NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS referral_earnings (
+  id                BIGSERIAL PRIMARY KEY,
+  referrer_user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  referred_user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  currency          VARCHAR(20) NOT NULL,
+  game              VARCHAR(32) NOT NULL,
+  wager_amount      NUMERIC(28, 8) NOT NULL,
+  commission_rate   NUMERIC(8, 4) NOT NULL,
+  commission_amount NUMERIC(28, 8) NOT NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_referral_earnings_referrer ON referral_earnings(referrer_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_referral_earnings_referred ON referral_earnings(referred_user_id, created_at DESC);
