@@ -324,9 +324,20 @@ async function creditDeposit(userId, currency, amount, txHash, fromAddress, toAd
 }
 
 // ─── Start All Watchers ───────────────────────────────────────────────────────
+
+async function logDbIdentity() {
+  try {
+    const res = await pool.query("SELECT current_database() AS db, current_user AS db_user, inet_server_addr()::text AS host, inet_server_port() AS port");
+    console.log("🗄️ Watcher DB target:", res.rows[0]);
+  } catch (err) {
+    console.warn("⚠️ Unable to read DB identity:", err.message);
+  }
+}
+
 async function start() {
   console.log("🔍 Starting deposit watcher service...");
   console.log(`🐞 WATCHER_DEBUG=${WATCHER_DEBUG ? "enabled" : "disabled"}`);
+  await logDbIdentity();
   const assigned = await ensureAllDepositAddresses();
   await logTrackedEvmAddresses();
   if (assigned > 0) {
