@@ -2,12 +2,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-
-const CURRENCY_SYMBOLS = {
-  USDT: "USDT",
-  ETH_POLYGON: "ETH",
-  BTC:          "BTC",
-};
+import { CURRENCY_META, DEFAULT_CURRENCIES } from "@/lib/currencies";
 
 export default function Navbar({ balances = {}, activeCurrency, onCurrencyChange }) {
   const { user, logout } = useAuth();
@@ -58,8 +53,8 @@ export default function Navbar({ balances = {}, activeCurrency, onCurrencyChange
               onChange={e => onCurrencyChange?.(e.target.value)}
               className="bg-transparent text-casino-muted text-xs font-mono focus:outline-none cursor-pointer"
             >
-              {Object.keys(CURRENCY_SYMBOLS).map(c => (
-                <option key={c} value={c}>{CURRENCY_SYMBOLS[c]}</option>
+              {DEFAULT_CURRENCIES.filter((c) => balances[c] !== undefined || c === activeCurrency).map(c => (
+                <option key={c} value={c}>{CURRENCY_META[c]?.symbol || c}</option>
               ))}
             </select>
             <span className="text-white font-mono text-sm font-medium">

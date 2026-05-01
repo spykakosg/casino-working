@@ -12,7 +12,7 @@ export async function fetchPrices() {
 }
 
 export function isCrypto(currency) {
-  return currency === "BTC" || currency === "ETH_POLYGON";
+  return ["BTC", "ETH_POLYGON", "ETH_SEPOLIA"].includes(currency);
 }
 
 export function betDecimals(currency) {
@@ -29,7 +29,7 @@ export function minBet(currency) {
 
 export function defaultBet(currency) {
   if (currency === "BTC") return "0.00001";
-  if (currency === "ETH_POLYGON") return "0.0004";
+  if (["ETH_POLYGON", "ETH_SEPOLIA"].includes(currency)) return "0.0004";
   return "1";
 }
 

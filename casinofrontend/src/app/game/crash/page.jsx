@@ -8,8 +8,8 @@ import { useCrash } from "@/hooks/useCrash";
 import { getBalances, getCrashBetHistory } from "@/lib/api";
 import * as BC from "@/lib/betConfig";
 
-const CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
-const CCY_SHORT  = { USDT: "USDT", ETH_POLYGON: "ETH", BTC: "BTC" };
+const CURRENCIES = ["USDT", "USDT_SEPOLIA", "ETH_POLYGON", "ETH_SEPOLIA", "BTC"];
+const CCY_SHORT  = { USDT: "USDT", USDT_SEPOLIA: "USDT", ETH_POLYGON: "ETH", ETH_SEPOLIA: "ETH", BTC: "BTC" };
 const fmtAmount = (value, currency) => parseFloat(value || 0).toFixed(BC.displayDecimals(currency));
 
 export default function CrashPage() {

@@ -7,7 +7,7 @@ import BetHistory from "@/components/BetHistory";
 import { minesStart, minesReveal, minesCashout, getBalances, getMinesBetHistory } from "@/lib/api";
 import * as BC from "@/lib/betConfig";
 
-const CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
+const CURRENCIES = ["USDT", "USDT_SEPOLIA", "ETH_POLYGON", "ETH_SEPOLIA", "BTC"];
 
 export default function MinesPage() {
   const { user, loading: authLoading } = useAuth();
