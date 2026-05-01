@@ -27,6 +27,15 @@ const CONFIRMATIONS_REQUIRED = {
 const IS_TESTNET = isTestnet;
 const USDT_CONTRACT = getUsdtContract();
 // ERC-20 Transfer event ABI (minimal)
+
+const WATCHER_DEBUG = String(process.env.WATCHER_DEBUG || "").toLowerCase() === "true";
+
+function debugLog(...args) {
+  if (WATCHER_DEBUG) {
+    console.log("[watcher:debug]", ...args);
+  }
+}
+
 const ERC20_ABI = [
   "event Transfer(address indexed from, address indexed to, uint256 value)",
   "function decimals() view returns (uint8)",
@@ -54,6 +63,7 @@ async function watchPolygon() {
 
   const evmRpcUrl = getEvmRpcUrl();
   const provider = new ethers.JsonRpcProvider(evmRpcUrl);
+  debugLog("EVM RPC URL configured", evmRpcUrl ? "yes" : "no");
   const usdtWatcherEnabled = Boolean(USDT_CONTRACT);
   if (!usdtWatcherEnabled && IS_TESTNET) {
     console.warn("⚠️  TESTNET_USDT_CONTRACT not set — USDT transfer watcher disabled in testnet mode");
@@ -67,6 +77,7 @@ async function watchPolygon() {
     usdtContract.on("Transfer", async (from, to, value, event) => {
     try {
       const address = to.toLowerCase();
+      debugLog("USDT Transfer seen", { from, to, value: value?.toString?.() });
       const userRes = await pool.query(
         `SELECT user_id, currency
          FROM wallets
@@ -81,7 +92,10 @@ async function watchPolygon() {
          LIMIT 1`,
         [address, ["USDT", "USDT_POLYGON", "USDT_TRON"]]
       );
-      if (userRes.rows.length === 0) return;
+      if (userRes.rows.length === 0) {
+        debugLog("USDT transfer did not match a wallet", address);
+        return;
+      }
 
       const { user_id: userId, currency: matchedCurrency } = userRes.rows[0];
       const amount = parseFloat(ethers.formatUnits(value, 6)); // USDT has 6 decimals
@@ -99,18 +113,25 @@ async function watchPolygon() {
   provider.on("block", async (blockNumber) => {
     try {
       const block = await provider.getBlock(blockNumber, true);
+      debugLog("Processing block", blockNumber);
       if (!block || !block.transactions) return;
 
       for (const txRef of block.transactions) {
         const tx = typeof txRef === "string" ? await provider.getTransaction(txRef) : txRef;
-        if (!tx || !tx.to || tx.value === 0n) continue;
+        if (!tx || !tx.to || tx.value === 0n) {
+          debugLog("Skipping tx without payable recipient/value", typeof txRef === "string" ? txRef : txRef?.hash);
+          continue;
+        }
         const address = tx.to.toLowerCase();
 
         const userRes = await pool.query(
           "SELECT user_id FROM wallets WHERE LOWER(deposit_address) = $1 AND currency = 'ETH_POLYGON'",
           [address]
         );
-        if (userRes.rows.length === 0) continue;
+        if (userRes.rows.length === 0) {
+          debugLog("ETH tx did not match a wallet", tx.hash, address);
+          continue;
+        }
 
         const userId = userRes.rows[0].user_id;
         const amount = parseFloat(ethers.formatEther(tx.value));
@@ -188,6 +209,8 @@ async function creditDeposit(userId, currency, amount, txHash, fromAddress, toAd
   try {
     await client.query("BEGIN");
 
+    debugLog("creditDeposit called", { userId, currency, amount, txHash });
+
     // Idempotency check — skip if tx already recorded
     if (txHash) {
       const existing = await client.query(
@@ -196,6 +219,7 @@ async function creditDeposit(userId, currency, amount, txHash, fromAddress, toAd
       );
       if (existing.rows.length > 0) {
         await client.query("ROLLBACK");
+        debugLog("Skipping already-processed tx", txHash);
         return; // already processed
       }
     }
