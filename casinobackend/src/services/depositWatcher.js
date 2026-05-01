@@ -18,6 +18,8 @@ const pool = require("../db/pool");
 const { ensureAllDepositAddresses } = require("./addressGenerator");
 const { isTestnet, getEvmRpcUrl, getBtcExplorerBaseUrl, getUsdtContract } = require("../config/networkMode");
 
+const ETH_BACKFILL_BLOCKS = parseInt(process.env.ETH_BACKFILL_BLOCKS || "50", 10);
+
 const CONFIRMATIONS_REQUIRED = {
   USDT: 2,
   ETH_POLYGON: 2,
@@ -134,46 +136,63 @@ async function watchPolygon() {
     });
   }
 
+  async function processEthBlock(blockNumber) {
+    const block = await provider.getBlock(blockNumber, true);
+    debugLog("Processing block", blockNumber);
+    if (!block || !block.transactions) return;
+
+    for (const txRef of block.transactions) {
+      const tx = typeof txRef === "string" ? await provider.getTransaction(txRef) : txRef;
+      if (!tx || !tx.to || tx.value === 0n) {
+        debugLog("Skipping tx without payable recipient/value", typeof txRef === "string" ? txRef : txRef?.hash);
+        continue;
+      }
+      const address = tx.to.toLowerCase();
+
+      const userRes = await pool.query(
+        `SELECT user_id, currency
+         FROM wallets
+         WHERE LOWER(deposit_address) = $1
+           AND currency = ANY($2::text[])
+         ORDER BY CASE
+           WHEN currency = 'ETH_POLYGON' THEN 0
+           WHEN currency = 'ETH_SEPOLIA' THEN 1
+           WHEN currency = 'ETH' THEN 2
+           ELSE 3
+         END
+         LIMIT 1`,
+        [address, ["ETH_POLYGON", "ETH_SEPOLIA", "ETH"]]
+      );
+      if (userRes.rows.length === 0) {
+        debugLog("ETH tx did not match a wallet", tx.hash, address);
+        continue;
+      }
+
+      const { user_id: userId, currency: matchedCurrency } = userRes.rows[0];
+      const amount = parseFloat(ethers.formatEther(tx.value));
+
+      console.log(`💰 ${matchedCurrency} deposit detected: ${amount} ETH → user ${userId}`);
+      await creditDeposit(userId, matchedCurrency, amount, tx.hash, tx.from, tx.to);
+    }
+  }
+
+  if (ETH_BACKFILL_BLOCKS > 0) {
+    const latest = await provider.getBlockNumber();
+    const start = Math.max(0, latest - ETH_BACKFILL_BLOCKS + 1);
+    console.log(`🔁 Backfilling ETH blocks ${start}..${latest} before live watch...`);
+    for (let b = start; b <= latest; b++) {
+      try {
+        await processEthBlock(b);
+      } catch (err) {
+        console.error(`ETH backfill block ${b} error:`, err.message || err);
+      }
+    }
+  }
+
   // Watch native ETH transfers by polling each new block
   provider.on("block", async (blockNumber) => {
     try {
-      const block = await provider.getBlock(blockNumber, true);
-      debugLog("Processing block", blockNumber);
-      if (!block || !block.transactions) return;
-
-      for (const txRef of block.transactions) {
-        const tx = typeof txRef === "string" ? await provider.getTransaction(txRef) : txRef;
-        if (!tx || !tx.to || tx.value === 0n) {
-          debugLog("Skipping tx without payable recipient/value", typeof txRef === "string" ? txRef : txRef?.hash);
-          continue;
-        }
-        const address = tx.to.toLowerCase();
-
-        const userRes = await pool.query(
-          `SELECT user_id, currency
-           FROM wallets
-           WHERE LOWER(deposit_address) = $1
-             AND currency = ANY($2::text[])
-           ORDER BY CASE
-             WHEN currency = 'ETH_POLYGON' THEN 0
-             WHEN currency = 'ETH_SEPOLIA' THEN 1
-             WHEN currency = 'ETH' THEN 2
-             ELSE 3
-           END
-           LIMIT 1`,
-          [address, ["ETH_POLYGON", "ETH_SEPOLIA", "ETH"]]
-        );
-        if (userRes.rows.length === 0) {
-          debugLog("ETH tx did not match a wallet", tx.hash, address);
-          continue;
-        }
-
-        const { user_id: userId, currency: matchedCurrency } = userRes.rows[0];
-        const amount = parseFloat(ethers.formatEther(tx.value));
-
-        console.log(`💰 ${matchedCurrency} deposit detected: ${amount} ETH → user ${userId}`);
-        await creditDeposit(userId, matchedCurrency, amount, tx.hash, tx.from, tx.to);
-      }
+      await processEthBlock(blockNumber);
     } catch (err) {
       console.error("ETH block watcher error:", err);
     }
