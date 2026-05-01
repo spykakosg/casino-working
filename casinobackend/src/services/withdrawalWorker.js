@@ -7,6 +7,10 @@
 
 require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env") });
 const { ethers } = require("ethers");
+const bitcoin = require("bitcoinjs-lib");
+const ecc = require("tiny-secp256k1");
+const { ECPairFactory } = require("ecpair");
+const ECPair = ECPairFactory(ecc);
 const pool = require("../db/pool");
 const { isTestnet, getEvmRpcUrl, getUsdtContract } = require("../config/networkMode");
 
@@ -16,6 +20,62 @@ const BATCH_SIZE = parseInt(process.env.WITHDRAWAL_WORKER_BATCH || "5", 10);
 
 function getWalletCurrencyCandidates(currency) {
   return currency === "USDT" ? ["USDT", "USDT_POLYGON", "USDT_TRON"] : [currency];
+}
+
+
+
+async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
+  const wif = process.env.TESTNET_BTC_WIF;
+  const fromAddress = process.env.TESTNET_BTC_FROM_ADDRESS;
+  if (!wif || !fromAddress) {
+    throw new Error("Missing TESTNET_BTC_WIF or TESTNET_BTC_FROM_ADDRESS");
+  }
+
+  const network = bitcoin.networks.testnet;
+  const keyPair = ECPair.fromWIF(wif, network);
+  const base = (process.env.BTC_EXPLORER_BASE_URL || "https://blockstream.info/testnet/api").replace(/\/$/, "");
+  const utxoResp = await fetch(`${base}/address/${fromAddress}/utxo`);
+  if (!utxoResp.ok) throw new Error(`BTC UTXO fetch failed: ${utxoResp.status}`);
+  const utxos = await utxoResp.json();
+  if (!Array.isArray(utxos) || utxos.length === 0) throw new Error("No BTC UTXOs available for payout wallet");
+
+  const satoshisOut = Math.floor(Number(amountBtc) * 100_000_000);
+  const feeRate = parseFloat(process.env.BTC_TESTNET_FEE_RATE || "2"); // sat/vbyte
+
+  let selected = [];
+  let totalIn = 0;
+  for (const u of utxos) {
+    selected.push(u);
+    totalIn += u.value;
+    if (totalIn > satoshisOut + 500) break;
+  }
+
+  const estVBytes = selected.length * 68 + 2 * 31 + 10;
+  const fee = Math.ceil(estVBytes * feeRate);
+  if (totalIn < satoshisOut + fee) throw new Error("Insufficient BTC UTXOs for amount + fee");
+  const change = totalIn - satoshisOut - fee;
+
+  const psbt = new bitcoin.Psbt({ network });
+  for (const u of selected) {
+    const txHexResp = await fetch(`${base}/tx/${u.txid}/hex`);
+    if (!txHexResp.ok) throw new Error(`BTC prevtx fetch failed: ${u.txid}`);
+    const txHex = await txHexResp.text();
+    psbt.addInput({ hash: u.txid, index: u.vout, nonWitnessUtxo: Buffer.from(txHex, "hex") });
+  }
+
+  psbt.addOutput({ address: toAddress, value: satoshisOut });
+  if (change > 546) {
+    psbt.addOutput({ address: fromAddress, value: change });
+  }
+
+  selected.forEach((_, i) => psbt.signInput(i, keyPair));
+  psbt.finalizeAllInputs();
+  const rawTx = psbt.extractTransaction().toHex();
+
+  const broadcastResp = await fetch(`${base}/tx`, { method: "POST", body: rawTx });
+  const txid = await broadcastResp.text();
+  if (!broadcastResp.ok) throw new Error(`BTC broadcast failed: ${txid}`);
+  return txid.trim();
 }
 
 async function executePayout(withdrawal) {
@@ -61,7 +121,8 @@ async function executePayout(withdrawal) {
     }
 
     if (withdrawal.currency === "BTC") {
-      throw new Error("BTC testnet withdrawals not yet implemented. Use stub or add BTC broadcaster integration.");
+      const txHash = await sendBtcTestnetWithdrawal(withdrawal.to_address, withdrawal.amount);
+      return { txHash, provider };
     }
   }
 
