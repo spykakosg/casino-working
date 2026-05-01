@@ -42,6 +42,8 @@ export default function Navbar({ balances = {}, activeCurrency, onCurrencyChange
           <NavLink href="/game/limbo" active={pathname === "/game/limbo"}>🎯 Limbo</NavLink>
           <NavLink href="/game/slots" active={pathname === "/game/slots"}>🎰 Slots</NavLink>
           <NavLink href="/wallet" active={pathname === "/wallet"}>💼 Wallet</NavLink>
+          <NavLink href="/leaderboard" active={pathname === "/leaderboard"}>🏆 Leaderboard</NavLink>
+          <NavLink href="/provably-fair" active={pathname === "/provably-fair"}>🔐 Fairness</NavLink>
           {user?.role === "admin" && (
             <NavLink href="/admin" active={pathname === "/admin"}>🛡️ Admin</NavLink>
           )}
@@ -66,9 +68,9 @@ export default function Navbar({ balances = {}, activeCurrency, onCurrencyChange
           </div>
 
           {/* Username */}
-          <span className="text-casino-muted text-sm font-mono hidden sm:block">
+          <Link href="/account" className="text-casino-muted hover:text-white text-sm font-mono hidden sm:block">
             {user?.username}
-          </span>
+          </Link>
 
           {/* Logout */}
           <button
@@ -81,7 +83,7 @@ export default function Navbar({ balances = {}, activeCurrency, onCurrencyChange
       </div>
 
       {/* Mobile nav */}
-      <div className="md:hidden flex border-t border-casino-border">
+      <div className="md:hidden flex border-t border-casino-border overflow-x-auto whitespace-nowrap">
         <MobileNavLink href="/game/dice" active={pathname === "/game/dice"}>🎲 Dice</MobileNavLink>
         <MobileNavLink href="/game/crash" active={pathname === "/game/crash"}>🚀 Crash</MobileNavLink>
         <MobileNavLink href="/game/roulette" active={pathname === "/game/roulette"}>🎰 Roulette</MobileNavLink>
@@ -91,6 +93,7 @@ export default function Navbar({ balances = {}, activeCurrency, onCurrencyChange
         <MobileNavLink href="/game/limbo" active={pathname === "/game/limbo"}>🎯 Limbo</MobileNavLink>
         <MobileNavLink href="/game/slots" active={pathname === "/game/slots"}>🎰 Slots</MobileNavLink>
         <MobileNavLink href="/wallet" active={pathname === "/wallet"}>💼 Wallet</MobileNavLink>
+        <MobileNavLink href="/leaderboard" active={pathname === "/leaderboard"}>🏆</MobileNavLink>
         {user?.role === "admin" && (
           <MobileNavLink href="/admin" active={pathname === "/admin"}>🛡️ Admin</MobileNavLink>
         )}
@@ -118,7 +121,7 @@ function MobileNavLink({ href, active, children }) {
   return (
     <Link
       href={href}
-      className={`flex-1 text-center py-2.5 text-sm transition-colors ${
+      className={`inline-block min-w-[84px] text-center py-2.5 text-sm transition-colors ${
         active ? "text-gold border-b-2 border-gold" : "text-casino-muted"
       }`}
     >

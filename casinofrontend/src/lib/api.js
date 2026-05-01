@@ -31,10 +31,10 @@ export async function login(username, password) {
   return data;
 }
 
-export async function register(username, password, email) {
+export async function register(username, password, email, referralCode) {
   const data = await request("/api/auth/register", {
     method: "POST",
-    body: JSON.stringify({ username, password, email }),
+    body: JSON.stringify({ username, password, email, referralCode }),
   });
   localStorage.setItem("casino_token", data.token);
   return data;
@@ -51,6 +51,15 @@ export async function getMe() {
 export async function getSeeds() {
   return request("/api/auth/seeds");
 }
+
+
+export async function changePassword(currentPassword, newPassword) {
+  return request('/api/auth/password', {
+    method: 'PUT',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+}
+
 
 export async function setClientSeed(currency, clientSeed) {
   return request("/api/auth/client-seed", {
@@ -254,4 +263,37 @@ export async function adminProcessWithdrawal(id, action, txHash) {
     method: "PUT",
     body: JSON.stringify({ action, txHash: txHash || undefined }),
   });
+}
+
+export async function getProfile() {
+  return request('/api/community/profile');
+}
+
+export async function getLeaderboard(period = 'all', type = 'wagered') {
+  return request(`/api/community/leaderboard?period=${period}&type=${type}`);
+}
+
+export async function verifyProvablyFair(serverSeed, clientSeed, nonce) {
+  return request(`/api/community/provably-fair/verify?serverSeed=${encodeURIComponent(serverSeed)}&clientSeed=${encodeURIComponent(clientSeed)}&nonce=${nonce}`);
+}
+
+export async function getMyReferral() {
+  return request('/api/community/referral/me');
+}
+
+export async function createReferral(code) {
+  return request('/api/community/referral/create', { method: 'POST', body: JSON.stringify({ code }) });
+}
+
+export async function requestPasswordReset(email) {
+  return request('/api/account/request-password-reset', { method: 'POST', body: JSON.stringify({ email }) });
+}
+
+export async function requestEmailVerification(email) {
+  return request('/api/account/request-email-verification', { method: 'POST', body: JSON.stringify({ email }) });
+}
+
+
+export async function getReferralStats() {
+  return request('/api/community/referral/stats');
 }

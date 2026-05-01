@@ -111,6 +111,7 @@ function StatsPanel() {
   if (loading) return <div className="text-center text-casino-muted py-12 font-mono">Loading stats...</div>;
   if (error) return <ErrorBox message={error} />;
   if (!stats) return null;
+  const pnlByCurrency = stats.pnlByCurrency || { allTime: { BTC: 0, ETH_POLYGON: 0 }, daily: { BTC: 0, ETH_POLYGON: 0 } };
 
   return (
     <div className="space-y-4">
@@ -155,6 +156,50 @@ function StatsPanel() {
           <div className="bg-casino-surface rounded-lg p-3">
             <div className="text-xs font-mono text-casino-muted">Wins Today</div>
             <div className="text-white font-mono font-bold">{stats.daily.totalWins.toLocaleString()}</div>
+          </div>
+        </div>
+      </div>
+
+
+      <div className="bg-casino-card border border-casino-border rounded-xl p-4">
+        <h3 className="text-sm font-mono text-casino-muted uppercase tracking-widest mb-3">BTC / ETH PnL</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="bg-casino-surface rounded-lg p-3">
+            <div className="text-xs font-mono text-casino-muted mb-2">All Time</div>
+            <div className="flex justify-between text-sm font-mono"><span>BTC</span><span className={pnlByCurrency.allTime.BTC >= 0 ? "text-green-400" : "text-red-400"}>{pnlByCurrency.allTime.BTC.toFixed(8)}</span></div>
+            <div className="flex justify-between text-sm font-mono mt-1"><span>ETH</span><span className={pnlByCurrency.allTime.ETH_POLYGON >= 0 ? "text-green-400" : "text-red-400"}>{pnlByCurrency.allTime.ETH_POLYGON.toFixed(8)}</span></div>
+          </div>
+          <div className="bg-casino-surface rounded-lg p-3">
+            <div className="text-xs font-mono text-casino-muted mb-2">Today</div>
+            <div className="flex justify-between text-sm font-mono"><span>BTC</span><span className={pnlByCurrency.daily.BTC >= 0 ? "text-green-400" : "text-red-400"}>{pnlByCurrency.daily.BTC.toFixed(8)}</span></div>
+            <div className="flex justify-between text-sm font-mono mt-1"><span>ETH</span><span className={pnlByCurrency.daily.ETH_POLYGON >= 0 ? "text-green-400" : "text-red-400"}>{pnlByCurrency.daily.ETH_POLYGON.toFixed(8)}</span></div>
+          </div>
+        </div>
+      </div>
+
+
+      <div className="bg-casino-card border border-casino-border rounded-xl p-4">
+        <h3 className="text-sm font-mono text-casino-muted uppercase tracking-widest mb-3">Reconciliation</h3>
+        <div className="space-y-2 mb-4">
+          {(stats.reconciliation?.byGame || []).map((g) => (
+            <div key={g.game} className="bg-casino-surface rounded-lg p-3 grid grid-cols-2 md:grid-cols-5 gap-2 text-xs font-mono">
+              <div><span className="text-casino-muted">Game</span><div>{g.game}</div></div>
+              <div><span className="text-casino-muted">Wagered</span><div>{g.wagered.toFixed(4)}</div></div>
+              <div><span className="text-casino-muted">Payout</span><div>{g.payout.toFixed(4)}</div></div>
+              <div><span className="text-casino-muted">House PnL</span><div className={g.houseProfit >= 0 ? "text-green-400" : "text-red-400"}>{g.houseProfit.toFixed(4)}</div></div>
+              <div><span className="text-casino-muted">Edge %</span><div>{g.edgePct.toFixed(2)}%</div></div>
+            </div>
+          ))}
+        </div>
+        <div>
+          <h4 className="text-xs font-mono text-casino-muted mb-2">Last 7 days wager vs payout</h4>
+          <div className="space-y-1">
+            {(stats.reconciliation?.payoutTrend || []).map((d) => (
+              <div key={d.day} className="text-xs font-mono flex justify-between bg-casino-surface rounded px-2 py-1">
+                <span>{d.day}</span>
+                <span>W: {d.wagered.toFixed(2)} / P: {d.payout.toFixed(2)} / H: {d.houseProfit.toFixed(2)}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>

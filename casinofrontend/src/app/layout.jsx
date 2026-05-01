@@ -1,5 +1,6 @@
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
+import LiveSupportWidget from "@/components/LiveSupportWidget";
 
 export const metadata = {
   title: "CasinoX — Provably Fair",
@@ -18,7 +19,7 @@ export default function RootLayout({ children }) {
         />
       </head>
       <body className="bg-casino-bg text-white font-body antialiased">
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>{children}<LiveSupportWidget /></AuthProvider>
       </body>
     </html>
   );

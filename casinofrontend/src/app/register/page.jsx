@@ -9,6 +9,7 @@ export default function RegisterPage() {
   const [username, setUsername] = useState("");
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
+  const [referralCode, setReferralCode] = useState("");
   const [error, setError]       = useState("");
   const [loading, setLoading]   = useState(false);
   const { setUser } = useAuth();
@@ -19,7 +20,7 @@ export default function RegisterPage() {
     setError("");
     setLoading(true);
     try {
-      const data = await register(username, password, email || undefined);
+      const data = await register(username, password, email || undefined, referralCode || undefined);
       setUser(data.user);
       router.push("/game/dice");
     } catch (err) {
@@ -82,6 +83,20 @@ export default function RegisterPage() {
                 className="w-full bg-casino-surface border border-casino-border rounded-lg px-4 py-3 text-white placeholder-casino-muted focus:outline-none focus:border-gold transition-colors font-mono"
                 placeholder="min 8 characters"
                 required minLength={8}
+              />
+            </div>
+
+
+            <div>
+              <label className="text-xs text-casino-muted font-mono uppercase tracking-widest block mb-2">
+                Referral code <span className="text-casino-muted/50">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={referralCode}
+                onChange={e => setReferralCode(e.target.value)}
+                className="w-full bg-casino-surface border border-casino-border rounded-lg px-4 py-3 text-white placeholder-casino-muted focus:outline-none focus:border-gold transition-colors font-mono"
+                placeholder="INVITE123"
               />
             </div>
 

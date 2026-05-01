@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { login } from "@/lib/api";
+import { login, requestPasswordReset } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 export default function LoginPage() {
@@ -12,6 +12,18 @@ export default function LoginPage() {
   const [loading, setLoading]   = useState(false);
   const { setUser } = useAuth();
   const router = useRouter();
+
+
+  async function handleReset() {
+    const email = window.prompt("Enter your account email for reset");
+    if (!email) return;
+    try {
+      await requestPasswordReset(email);
+      alert("If this email exists, a reset email was queued.");
+    } catch (err) {
+      alert(err.message);
+    }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -82,6 +94,8 @@ export default function LoginPage() {
               {loading ? "Signing in..." : "Sign In"}
             </button>
           </form>
+
+          <button onClick={handleReset} className="text-xs text-gold mt-3 hover:underline">Forgot password?</button>
 
           <p className="text-center text-casino-muted text-sm mt-6">
             No account?{" "}
