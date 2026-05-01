@@ -105,7 +105,7 @@ TESTNET_PAYOUT_PRIVATE_KEY=0x...
 TESTNET_BTC_WIF=c...           # preferred for testnet BTC payouts
 # or TESTNET_BTC_PRIVATE_KEY_HEX=...
 # (fallback: TESTNET_PAYOUT_PRIVATE_KEY is used if BTC-specific key vars are not set)
-# optional: TESTNET_BTC_FROM_ADDRESS=tb1... (auto-derived from key if omitted)
+# optional: TESTNET_BTC_FROM_ADDRESS=tb1... (if omitted, worker auto-checks derived p2wpkh/p2sh-p2wpkh/p2pkh addresses)
 ```
 
 Notes:

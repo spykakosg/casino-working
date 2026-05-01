@@ -50,19 +50,44 @@ async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
     const fromAddressExplicit = process.env.TESTNET_BTC_FROM_ADDRESS;
     if (fromAddressExplicit) {
       fromAddress = fromAddressExplicit;
-    } else {
-      const payment = bitcoin.payments.p2wpkh({ pubkey: Buffer.from(keyPair.publicKey), network });
-      if (!payment.address) throw new Error("Failed to derive TESTNET_BTC_FROM_ADDRESS from configured key");
-      fromAddress = payment.address;
     }
   } catch (err) {
     throw new Error(`BTC withdrawals require valid BTC key config and bitcoinjs-lib/tiny-secp256k1/ecpair deps. ${err.message}`);
   }
   const base = (process.env.BTC_EXPLORER_BASE_URL || "https://blockstream.info/testnet/api").replace(/\/$/, "");
-  const utxoResp = await fetch(`${base}/address/${fromAddress}/utxo`);
-  if (!utxoResp.ok) throw new Error(`BTC UTXO fetch failed: ${utxoResp.status}`);
-  const utxos = await utxoResp.json();
-  if (!Array.isArray(utxos) || utxos.length === 0) throw new Error("No BTC UTXOs available for payout wallet");
+
+  const candidateAddresses = [];
+  if (fromAddress) {
+    candidateAddresses.push(fromAddress);
+  } else {
+    const pubkey = Buffer.from(keyPair.publicKey);
+    const derived = [
+      bitcoin.payments.p2wpkh({ pubkey, network }).address,
+      bitcoin.payments.p2sh({ redeem: bitcoin.payments.p2wpkh({ pubkey, network }), network }).address,
+      bitcoin.payments.p2pkh({ pubkey, network }).address,
+    ].filter(Boolean);
+    candidateAddresses.push(...derived);
+  }
+
+  let utxos = [];
+  let selectedFromAddress = null;
+  for (const candidate of candidateAddresses) {
+    const utxoResp = await fetch(`${base}/address/${candidate}/utxo`);
+    if (!utxoResp.ok) throw new Error(`BTC UTXO fetch failed for ${candidate}: ${utxoResp.status}`);
+    const rows = await utxoResp.json();
+    if (Array.isArray(rows) && rows.length > 0) {
+      utxos = rows;
+      selectedFromAddress = candidate;
+      break;
+    }
+  }
+
+  if (!Array.isArray(utxos) || utxos.length === 0) {
+    throw new Error(`No BTC UTXOs available for payout wallet. Checked addresses: ${candidateAddresses.join(", ")}`);
+  }
+
+  fromAddress = selectedFromAddress || fromAddress;
+  console.log(`₿ BTC payout source address: ${fromAddress} (UTXOs: ${utxos.length})`);
 
   const satoshisOut = Math.floor(Number(amountBtc) * 100_000_000);
   const feeRate = parseFloat(process.env.BTC_TESTNET_FEE_RATE || "2"); // sat/vbyte
