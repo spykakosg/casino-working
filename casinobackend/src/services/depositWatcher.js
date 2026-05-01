@@ -20,7 +20,9 @@ const { isTestnet, getEvmRpcUrl, getBtcExplorerBaseUrl, getUsdtContract } = requ
 
 const CONFIRMATIONS_REQUIRED = {
   USDT: 2,
+  USDT_SEPOLIA: 2,
   ETH_POLYGON: 2,
+  ETH_SEPOLIA: 2,
   BTC: 3,
 };
 
@@ -67,16 +69,17 @@ async function watchPolygon() {
     try {
       const address = to.toLowerCase();
       const userRes = await pool.query(
-        "SELECT user_id FROM wallets WHERE LOWER(deposit_address) = $1 AND currency = 'USDT'",
+        "SELECT user_id, currency FROM wallets WHERE LOWER(deposit_address) = $1 AND currency IN ('USDT', 'USDT_SEPOLIA')",
         [address]
       );
       if (userRes.rows.length === 0) return;
 
       const userId = userRes.rows[0].user_id;
-      const amount = parseFloat(ethers.formatUnits(value, 6)); // USDT has 6 decimals
+      const walletCurrency = userRes.rows[0].currency || 'USDT';
+      const amount = parseFloat(ethers.formatUnits(value, 6)); // USDT-like tokens often use 6 decimals
 
-      console.log(`💰 USDT deposit detected: ${amount} USDT → user ${userId}`);
-      await creditDeposit(userId, "USDT", amount, null, from, to);
+      console.log(`💰 ${walletCurrency} deposit detected: ${amount} → user ${userId}`);
+      await creditDeposit(userId, walletCurrency, amount, null, from, to);
     } catch (err) {
       console.error("USDT transfer handler error:", err);
     }
@@ -93,16 +96,17 @@ async function watchPolygon() {
         const address = tx.to.toLowerCase();
 
         const userRes = await pool.query(
-          "SELECT user_id FROM wallets WHERE LOWER(deposit_address) = $1 AND currency = 'ETH_POLYGON'",
+          "SELECT user_id, currency FROM wallets WHERE LOWER(deposit_address) = $1 AND currency IN ('ETH_POLYGON', 'ETH_SEPOLIA')",
           [address]
         );
         if (userRes.rows.length === 0) continue;
 
         const userId = userRes.rows[0].user_id;
+        const walletCurrency = userRes.rows[0].currency || 'ETH_POLYGON';
         const amount = parseFloat(ethers.formatEther(tx.value));
 
-        console.log(`💰 ETH_POLYGON deposit detected: ${amount} ETH → user ${userId}`);
-        await creditDeposit(userId, "ETH_POLYGON", amount, tx.hash, tx.from, tx.to);
+        console.log(`💰 ${walletCurrency} deposit detected: ${amount} ETH → user ${userId}`);
+        await creditDeposit(userId, walletCurrency, amount, tx.hash, tx.from, tx.to);
       }
     } catch (err) {
       console.error("ETH block watcher error:", err);

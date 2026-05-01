@@ -15,7 +15,9 @@ const MAX_ATTEMPTS = parseInt(process.env.WITHDRAWAL_MAX_ATTEMPTS || "5", 10);
 const BATCH_SIZE = parseInt(process.env.WITHDRAWAL_WORKER_BATCH || "5", 10);
 
 function getWalletCurrencyCandidates(currency) {
-  return currency === "USDT" ? ["USDT", "USDT_POLYGON", "USDT_TRON"] : [currency];
+  return ["USDT", "USDT_POLYGON", "USDT_TRON", "USDT_SEPOLIA"].includes(currency)
+    ? ["USDT", "USDT_POLYGON", "USDT_TRON", "USDT_SEPOLIA"]
+    : (["ETH_POLYGON", "ETH_SEPOLIA"].includes(currency) ? ["ETH_POLYGON", "ETH_SEPOLIA"] : [currency]);
 }
 
 async function executePayout(withdrawal) {
@@ -39,7 +41,7 @@ async function executePayout(withdrawal) {
       throw new Error("Missing TESTNET_EVM_RPC_URL or TESTNET_PAYOUT_PRIVATE_KEY");
     }
 
-    if (withdrawal.currency === "ETH_POLYGON") {
+    if (["ETH_POLYGON", "ETH_SEPOLIA"].includes(withdrawal.currency)) {
       const rpc = new ethers.JsonRpcProvider(rpcUrl);
       const signer = new ethers.Wallet(signerKey, rpc);
       const tx = await signer.sendTransaction({
@@ -49,7 +51,7 @@ async function executePayout(withdrawal) {
       return { txHash: tx.hash, provider };
     }
 
-    if (withdrawal.currency === "USDT") {
+    if (["USDT", "USDT_SEPOLIA"].includes(withdrawal.currency)) {
       const usdt = getUsdtContract();
       if (!usdt) throw new Error("Missing TESTNET_USDT_CONTRACT for USDT withdrawals");
       const rpc = new ethers.JsonRpcProvider(rpcUrl);
