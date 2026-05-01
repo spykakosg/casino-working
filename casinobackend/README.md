@@ -109,6 +109,36 @@ Notes:
 - BTC testnet deposits are supported via testnet explorer URL.
 - BTC testnet withdrawals are not yet implemented in worker (ETH/USDT testnet withdrawals are implemented).
 
+
+### Windows CMD quick-start (copy/paste)
+
+If you are using **Command Prompt (cmd.exe)**, use these commands:
+
+```cmd
+cd /d C:\path\to\casino-working\casinobackend
+npm install
+
+:: set testnet env for current cmd window
+set TESTNET_MODE=true
+set TESTNET_EVM_RPC_URL=https://sepolia.infura.io/v3/YOUR_KEY
+set TESTNET_USDT_CONTRACT=0x94f29c9e01a5b19546231141b870d14074be939c
+set BTC_EXPLORER_BASE_URL=https://blockstream.info/testnet/api
+set PAYOUT_PROVIDER=testnet
+set TESTNET_PAYOUT_PRIVATE_KEY=0xYOUR_TESTNET_PRIVATE_KEY
+
+:: run app + workers
+npm run dev
+```
+
+Open two more CMD windows in the same folder and run:
+
+```cmd
+npm run watcher
+npm run withdrawal-worker
+```
+
+If you prefer `.env`, create `casinobackend\.env` and put the same values there.
+
 ### Step 5 — Run the database schema
 
 ```powershell
