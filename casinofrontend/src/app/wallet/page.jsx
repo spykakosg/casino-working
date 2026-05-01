@@ -34,6 +34,7 @@ export default function WalletPage() {
   const [withdrawError, setWithdrawError]   = useState("");
   const [withdrawSuccess, setWithdrawSuccess] = useState("");
   const [withdrawLoading, setWithdrawLoading] = useState(false);
+  const [feePriority, setFeePriority] = useState("medium");
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -85,7 +86,7 @@ export default function WalletPage() {
     setWithdrawSuccess("");
     setWithdrawLoading(true);
     try {
-      await requestWithdrawal(activeCurrency, parseFloat(withdrawAmount), withdrawAddress);
+      await requestWithdrawal(activeCurrency, parseFloat(withdrawAmount), withdrawAddress, feePriority);
       setWithdrawSuccess("Withdrawal submitted successfully!");
       setWithdrawAmount("");
       setWithdrawAddress("");
@@ -251,6 +252,15 @@ export default function WalletPage() {
                     placeholder="0x..."
                     required
                   />
+                </div>
+
+                <div>
+                  <label className="text-xs text-casino-muted font-mono uppercase tracking-widest block mb-2">Priority</label>
+                  <select value={feePriority} onChange={e => setFeePriority(e.target.value)} className="w-full bg-casino-surface border border-casino-border rounded-lg px-4 py-3 text-white font-mono focus:outline-none focus:border-gold transition-colors">
+                    <option value="low">Low (cheaper, slower)</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High (faster, higher fee)</option>
+                  </select>
                 </div>
 
                 <button

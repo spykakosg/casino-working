@@ -18,6 +18,11 @@ const pool = require("../db/pool");
 const { ensureAllDepositAddresses } = require("./addressGenerator");
 const { isTestnet, getEvmRpcUrl, getBtcExplorerBaseUrl, getUsdtContract } = require("../config/networkMode");
 
+const ETH_BACKFILL_BLOCKS = parseInt(process.env.ETH_BACKFILL_BLOCKS || "5000", 10);
+const cliTxHashes = process.argv.slice(2).map((s) => s.trim()).filter((s) => s.startsWith("0x"));
+const envTxHashes = (process.env.ETH_BACKFILL_TX_HASHES || "").split(",").map((s) => s.trim()).filter(Boolean);
+const ETH_BACKFILL_TX_HASHES = [...new Set([...envTxHashes, ...cliTxHashes])];
+
 const CONFIRMATIONS_REQUIRED = {
   USDT: 2,
   ETH_POLYGON: 2,
@@ -27,6 +32,13 @@ const CONFIRMATIONS_REQUIRED = {
 const IS_TESTNET = isTestnet;
 const USDT_CONTRACT = getUsdtContract();
 // ERC-20 Transfer event ABI (minimal)
+
+const WATCHER_DEBUG = true;
+
+function debugLog(...args) {
+  console.log("[watcher:debug]", ...args);
+}
+
 const ERC20_ABI = [
   "event Transfer(address indexed from, address indexed to, uint256 value)",
   "function decimals() view returns (uint8)",
@@ -39,6 +51,14 @@ function hasUsableAlchemyUrl() {
   return true;
 }
 
+
+function createEvmProvider(url) {
+  if (url.startsWith("ws://") || url.startsWith("wss://")) {
+    return new ethers.WebSocketProvider(url);
+  }
+  return new ethers.JsonRpcProvider(url);
+}
+
 function isLikelyBitcoinAddress(address) {
   if (!address) return false;
   if (address.includes("placeholder")) return false;
@@ -46,6 +66,38 @@ function isLikelyBitcoinAddress(address) {
 }
 
 // ─── Polygon (ETH + USDT) ─────────────────────────────────────────────────────
+
+async function logTrackedEvmAddresses() {
+  try {
+    const res = await pool.query(
+      `SELECT user_id, currency, deposit_address
+       FROM wallets
+       WHERE currency = ANY($1::text[])
+         AND deposit_address IS NOT NULL
+         AND deposit_address <> ''
+       ORDER BY user_id ASC, currency ASC
+       LIMIT 50`,
+      [["ETH_POLYGON", "ETH_SEPOLIA", "ETH", "USDT", "USDT_POLYGON", "USDT_TRON"]]
+    );
+    debugLog(`Tracked EVM deposit addresses (showing ${res.rows.length}):`, res.rows);
+  } catch (err) {
+    console.error("Failed to load tracked EVM addresses for debug:", err.message);
+  }
+}
+
+
+async function resolveTransactionWithRetry(provider, txRef, attempts = 3, delayMs = 400) {
+  if (typeof txRef !== "string") return txRef;
+  for (let i = 0; i < attempts; i++) {
+    const tx = await provider.getTransaction(txRef);
+    if (tx) return tx;
+    if (i < attempts - 1) {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  return null;
+}
+
 async function watchPolygon() {
   if (!hasUsableAlchemyUrl()) {
     console.warn("⚠️  ALCHEMY_POLYGON_URL missing/invalid (or still using YOUR_ALCHEMY_KEY) — Polygon watcher disabled");
@@ -53,57 +105,131 @@ async function watchPolygon() {
   }
 
   const evmRpcUrl = getEvmRpcUrl();
-  const provider = new ethers.JsonRpcProvider(evmRpcUrl);
-  if (IS_TESTNET && !USDT_CONTRACT) {
+  const provider = createEvmProvider(evmRpcUrl);
+  debugLog("EVM RPC URL configured", evmRpcUrl ? "yes" : "no");
+  const usdtWatcherEnabled = Boolean(USDT_CONTRACT);
+  if (!usdtWatcherEnabled && IS_TESTNET) {
     console.warn("⚠️  TESTNET_USDT_CONTRACT not set — USDT transfer watcher disabled in testnet mode");
-    return;
   }
-  const usdtContract = new ethers.Contract(USDT_CONTRACT, ERC20_ABI, provider);
 
-  console.log(`👁  Watching ${IS_TESTNET ? "EVM testnet" : "Polygon mainnet"} (ETH + USDT)...`);
+  console.log(`👁  Watching ${IS_TESTNET ? "EVM testnet" : "Polygon mainnet"} (${usdtWatcherEnabled ? "ETH + USDT" : "ETH only"})...`);
 
   // Watch USDT transfers
-  usdtContract.on("Transfer", async (from, to, value) => {
+  if (usdtWatcherEnabled) {
+    const usdtContract = new ethers.Contract(USDT_CONTRACT, ERC20_ABI, provider);
+    usdtContract.on("Transfer", async (from, to, value, event) => {
     try {
       const address = to.toLowerCase();
+      debugLog("USDT Transfer seen", { from, to, value: value?.toString?.() });
       const userRes = await pool.query(
-        "SELECT user_id FROM wallets WHERE LOWER(deposit_address) = $1 AND currency = 'USDT'",
-        [address]
+        `SELECT user_id, currency
+         FROM wallets
+         WHERE LOWER(deposit_address) = $1
+           AND currency = ANY($2::text[])
+         ORDER BY CASE
+           WHEN currency = 'USDT' THEN 0
+           WHEN currency = 'USDT_POLYGON' THEN 1
+           WHEN currency = 'USDT_TRON' THEN 2
+           ELSE 3
+         END
+         LIMIT 1`,
+        [address, ["USDT", "USDT_POLYGON", "USDT_TRON"]]
       );
-      if (userRes.rows.length === 0) return;
+      if (userRes.rows.length === 0) {
+        debugLog("USDT transfer did not match a wallet", address);
+        return;
+      }
 
-      const userId = userRes.rows[0].user_id;
+      const { user_id: userId, currency: matchedCurrency } = userRes.rows[0];
       const amount = parseFloat(ethers.formatUnits(value, 6)); // USDT has 6 decimals
 
-      console.log(`💰 USDT deposit detected: ${amount} USDT → user ${userId}`);
-      await creditDeposit(userId, "USDT", amount, null, from, to);
+      console.log(`💰 ${matchedCurrency} deposit detected: ${amount} USDT → user ${userId}`);
+      const txHash = event?.log?.transactionHash || event?.transactionHash || null;
+      await creditDeposit(userId, matchedCurrency, amount, txHash, from, to);
     } catch (err) {
       console.error("USDT transfer handler error:", err);
     }
-  });
+    });
+  }
+
+  async function processEthTransaction(tx, txHashFallback = null) {
+    if (!tx || !tx.to || tx.value === 0n) {
+      debugLog("Skipping tx without payable recipient/value", txHashFallback || tx?.hash);
+      return;
+    }
+    const address = tx.to.toLowerCase();
+
+    const userRes = await pool.query(
+      `SELECT user_id, currency
+       FROM wallets
+       WHERE LOWER(deposit_address) = $1
+         AND currency = ANY($2::text[])
+       ORDER BY CASE
+         WHEN currency = 'ETH_POLYGON' THEN 0
+         WHEN currency = 'ETH_SEPOLIA' THEN 1
+         WHEN currency = 'ETH' THEN 2
+         ELSE 3
+       END
+       LIMIT 1`,
+      [address, ["ETH_POLYGON", "ETH_SEPOLIA", "ETH"]]
+    );
+    if (userRes.rows.length === 0) {
+      debugLog("ETH tx did not match a wallet", tx.hash || txHashFallback, address);
+      return;
+    }
+
+    const { user_id: userId, currency: matchedCurrency } = userRes.rows[0];
+    const amount = parseFloat(ethers.formatEther(tx.value));
+
+    console.log(`💰 ${matchedCurrency} deposit detected: ${amount} ETH → user ${userId}`);
+    await creditDeposit(userId, matchedCurrency, amount, tx.hash || txHashFallback, tx.from, tx.to);
+  }
+
+  async function processEthBlock(blockNumber) {
+    const block = await provider.getBlock(blockNumber, true);
+    debugLog("Processing block", blockNumber);
+    if (!block || !block.transactions) return;
+
+    for (const txRef of block.transactions) {
+      const tx = await resolveTransactionWithRetry(provider, txRef);
+      if (!tx && typeof txRef === "string") {
+        debugLog("Transaction not yet available after retries", txRef);
+      }
+      await processEthTransaction(tx, typeof txRef === "string" ? txRef : txRef?.hash);
+    }
+  }
+
+  for (const txHash of ETH_BACKFILL_TX_HASHES) {
+    try {
+      const tx = await provider.getTransaction(txHash);
+      if (!tx) {
+        console.warn(`⚠️ ETH backfill tx not found: ${txHash}`);
+        continue;
+      }
+      console.log(`🔁 Backfilling specific ETH tx ${txHash}...`);
+      await processEthTransaction(tx, txHash);
+    } catch (err) {
+      console.error(`ETH tx backfill error for ${txHash}:`, err.message || err);
+    }
+  }
+
+  if (ETH_BACKFILL_BLOCKS > 0) {
+    const latest = await provider.getBlockNumber();
+    const start = Math.max(0, latest - ETH_BACKFILL_BLOCKS + 1);
+    console.log(`🔁 Backfilling ETH blocks ${start}..${latest} before live watch...`);
+    for (let b = start; b <= latest; b++) {
+      try {
+        await processEthBlock(b);
+      } catch (err) {
+        console.error(`ETH backfill block ${b} error:`, err.message || err);
+      }
+    }
+  }
 
   // Watch native ETH transfers by polling each new block
   provider.on("block", async (blockNumber) => {
     try {
-      const block = await provider.getBlock(blockNumber, true);
-      if (!block || !block.transactions) return;
-
-      for (const tx of block.transactions) {
-        if (!tx.to || tx.value === 0n) continue;
-        const address = tx.to.toLowerCase();
-
-        const userRes = await pool.query(
-          "SELECT user_id FROM wallets WHERE LOWER(deposit_address) = $1 AND currency = 'ETH_POLYGON'",
-          [address]
-        );
-        if (userRes.rows.length === 0) continue;
-
-        const userId = userRes.rows[0].user_id;
-        const amount = parseFloat(ethers.formatEther(tx.value));
-
-        console.log(`💰 ETH_POLYGON deposit detected: ${amount} ETH → user ${userId}`);
-        await creditDeposit(userId, "ETH_POLYGON", amount, tx.hash, tx.from, tx.to);
-      }
+      await processEthBlock(blockNumber);
     } catch (err) {
       console.error("ETH block watcher error:", err);
     }
@@ -174,6 +300,8 @@ async function creditDeposit(userId, currency, amount, txHash, fromAddress, toAd
   try {
     await client.query("BEGIN");
 
+    debugLog("creditDeposit called", { userId, currency, amount, txHash });
+
     // Idempotency check — skip if tx already recorded
     if (txHash) {
       const existing = await client.query(
@@ -182,6 +310,7 @@ async function creditDeposit(userId, currency, amount, txHash, fromAddress, toAd
       );
       if (existing.rows.length > 0) {
         await client.query("ROLLBACK");
+        debugLog("Skipping already-processed tx", txHash);
         return; // already processed
       }
     }
@@ -211,9 +340,22 @@ async function creditDeposit(userId, currency, amount, txHash, fromAddress, toAd
 }
 
 // ─── Start All Watchers ───────────────────────────────────────────────────────
+
+async function logDbIdentity() {
+  try {
+    const res = await pool.query("SELECT current_database() AS db, current_user AS db_user, inet_server_addr()::text AS host, inet_server_port() AS port");
+    console.log("🗄️ Watcher DB target:", res.rows[0]);
+  } catch (err) {
+    console.warn("⚠️ Unable to read DB identity:", err.message);
+  }
+}
+
 async function start() {
   console.log("🔍 Starting deposit watcher service...");
+  console.log(`🐞 WATCHER_DEBUG=${WATCHER_DEBUG ? "enabled" : "disabled"}`);
+  await logDbIdentity();
   const assigned = await ensureAllDepositAddresses();
+  await logTrackedEvmAddresses();
   if (assigned > 0) {
     console.log(`🏷️  Assigned missing deposit addresses for ${assigned} user(s)`);
   }

@@ -18,6 +18,8 @@ export default function WalletPage() {
 
   const [balances, setBalances]           = useState({});
   const [activeCurrency, setActiveCurrency] = useState("USDT_SEPOLIA");
+
+  const walletCurrency = mapWalletCurrency(activeCurrency);
   const [tab, setTab]                     = useState("deposit"); // deposit | withdraw | history
   const [depositAddress, setDepositAddress] = useState(null);
   const [depositLoading, setDepositLoading] = useState(false);
@@ -31,6 +33,7 @@ export default function WalletPage() {
   const [withdrawError, setWithdrawError]   = useState("");
   const [withdrawSuccess, setWithdrawSuccess] = useState("");
   const [withdrawLoading, setWithdrawLoading] = useState(false);
+  const [feePriority, setFeePriority] = useState("medium");
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -45,7 +48,7 @@ export default function WalletPage() {
 
   useEffect(() => {
     if (tab === "deposit") fetchDepositAddress();
-  }, [tab, activeCurrency]);
+  }, [tab, activeCurrency, walletCurrency]);
 
   async function fetchBalances() {
     try {
@@ -59,7 +62,7 @@ export default function WalletPage() {
   async function fetchDepositAddress() {
     setDepositLoading(true);
     try {
-      const data = await getDepositAddress(activeCurrency);
+      const data = await getDepositAddress(walletCurrency);
       setDepositAddress(data.address);
     } catch (err) {
       setDepositAddress(null);
@@ -82,7 +85,7 @@ export default function WalletPage() {
     setWithdrawSuccess("");
     setWithdrawLoading(true);
     try {
-      await requestWithdrawal(activeCurrency, parseFloat(withdrawAmount), withdrawAddress);
+      await requestWithdrawal(walletCurrency, parseFloat(withdrawAmount), withdrawAddress, feePriority);
       setWithdrawSuccess("Withdrawal submitted successfully!");
       setWithdrawAmount("");
       setWithdrawAddress("");
@@ -116,7 +119,7 @@ export default function WalletPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {CURRENCIES.map(c => {
             const info = CURRENCY_LABELS[c];
-            const bal = balances[c] ?? 0;
+            const bal = balances[mapWalletCurrency(c)] ?? 0;
             return (
               <button
                 key={c}
@@ -210,7 +213,7 @@ export default function WalletPage() {
                 <div>
                   <h3 className="font-semibold mb-1">Withdraw {CURRENCY_LABELS[activeCurrency].name}</h3>
                   <p className="text-casino-muted text-sm">
-                    Available: <span className="text-white font-mono">{(balances[activeCurrency] ?? 0).toFixed(8)}</span>
+                    Available: <span className="text-white font-mono">{(balances[walletCurrency] ?? 0).toFixed(8)}</span>
                   </p>
                 </div>
 
@@ -228,7 +231,7 @@ export default function WalletPage() {
                 <div>
                   <label className="text-xs text-casino-muted font-mono uppercase tracking-widest block mb-2">Amount</label>
                   <input
-                    type="number" min="0.01" step="0.01"
+                    type="number" min="0" step="0.00000001"
                     value={withdrawAmount}
                     onChange={e => setWithdrawAmount(e.target.value)}
                     className="w-full bg-casino-surface border border-casino-border rounded-lg px-4 py-3 text-white font-mono focus:outline-none focus:border-gold transition-colors"
@@ -248,6 +251,20 @@ export default function WalletPage() {
                     placeholder="0x..."
                     required
                   />
+                </div>
+
+
+                <div>
+                  <label className="text-xs text-casino-muted font-mono uppercase tracking-widest block mb-2">Priority</label>
+                  <select
+                    value={feePriority}
+                    onChange={e => setFeePriority(e.target.value)}
+                    className="w-full bg-casino-surface border border-casino-border rounded-lg px-4 py-3 text-white font-mono focus:outline-none focus:border-gold transition-colors"
+                  >
+                    <option value="low">Low (cheaper, slower)</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High (faster, higher fee)</option>
+                  </select>
                 </div>
 
                 <button
@@ -311,6 +328,12 @@ export default function WalletPage() {
       </main>
     </div>
   );
+}
+
+function mapWalletCurrency(currency) {
+  if (currency === "USDT_SEPOLIA") return "USDT";
+  if (currency === "ETH_SEPOLIA") return "ETH_POLYGON";
+  return currency;
 }
 
 function StatusBadge({ status }) {

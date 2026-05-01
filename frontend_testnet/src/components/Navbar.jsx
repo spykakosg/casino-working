@@ -14,7 +14,7 @@ export default function Navbar({ balances = {}, activeCurrency, onCurrencyChange
     router.push("/login");
   }
 
-  const balance = balances[activeCurrency] ?? 0;
+  const balance = getBalanceForCurrency(balances, activeCurrency) ?? 0;
   const balanceDecimals = 8;
 
   return (
@@ -53,7 +53,7 @@ export default function Navbar({ balances = {}, activeCurrency, onCurrencyChange
               onChange={e => onCurrencyChange?.(e.target.value)}
               className="bg-transparent text-casino-muted text-xs font-mono focus:outline-none cursor-pointer"
             >
-              {DEFAULT_CURRENCIES.filter((c) => balances[c] !== undefined || c === activeCurrency).map(c => (
+              {DEFAULT_CURRENCIES.filter((c) => getBalanceForCurrency(balances, c) !== undefined || c === activeCurrency).map(c => (
                 <option key={c} value={c}>{CURRENCY_META[c]?.symbol || c}</option>
               ))}
             </select>
@@ -123,4 +123,16 @@ function MobileNavLink({ href, active, children }) {
       {children}
     </Link>
   );
+}
+
+
+function mapWalletCurrency(currency) {
+  if (currency === "USDT_SEPOLIA") return "USDT";
+  if (currency === "ETH_SEPOLIA") return "ETH_POLYGON";
+  return currency;
+}
+
+function getBalanceForCurrency(balances, currency) {
+  const mapped = mapWalletCurrency(currency);
+  return balances[mapped];
 }

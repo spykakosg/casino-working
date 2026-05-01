@@ -100,10 +100,10 @@ export async function getDepositAddress(currency) {
   return request(`/api/wallet/deposit/${currency}`);
 }
 
-export async function requestWithdrawal(currency, amount, toAddress) {
+export async function requestWithdrawal(currency, amount, toAddress, feePriority = "medium") {
   return request("/api/wallet/withdraw", {
     method: "POST",
-    body: JSON.stringify({ currency, amount, toAddress }),
+    body: JSON.stringify({ currency, amount, toAddress, feePriority }),
   });
 }
 
