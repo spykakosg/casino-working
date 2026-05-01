@@ -61,6 +61,25 @@ function isLikelyBitcoinAddress(address) {
 }
 
 // ─── Polygon (ETH + USDT) ─────────────────────────────────────────────────────
+
+async function logTrackedEvmAddresses() {
+  try {
+    const res = await pool.query(
+      `SELECT user_id, currency, deposit_address
+       FROM wallets
+       WHERE currency = ANY($1::text[])
+         AND deposit_address IS NOT NULL
+         AND deposit_address <> ''
+       ORDER BY user_id ASC, currency ASC
+       LIMIT 50`,
+      [["ETH_POLYGON", "ETH_SEPOLIA", "ETH", "USDT", "USDT_POLYGON", "USDT_TRON"]]
+    );
+    debugLog(`Tracked EVM deposit addresses (showing ${res.rows.length}):`, res.rows);
+  } catch (err) {
+    console.error("Failed to load tracked EVM addresses for debug:", err.message);
+  }
+}
+
 async function watchPolygon() {
   if (!hasUsableAlchemyUrl()) {
     console.warn("⚠️  ALCHEMY_POLYGON_URL missing/invalid (or still using YOUR_ALCHEMY_KEY) — Polygon watcher disabled");
@@ -269,6 +288,7 @@ async function start() {
   console.log("🔍 Starting deposit watcher service...");
   console.log(`🐞 WATCHER_DEBUG=${WATCHER_DEBUG ? "enabled" : "disabled"}`);
   const assigned = await ensureAllDepositAddresses();
+  await logTrackedEvmAddresses();
   if (assigned > 0) {
     console.log(`🏷️  Assigned missing deposit addresses for ${assigned} user(s)`);
   }
