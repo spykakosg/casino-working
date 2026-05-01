@@ -54,16 +54,17 @@ async function watchPolygon() {
 
   const evmRpcUrl = getEvmRpcUrl();
   const provider = new ethers.JsonRpcProvider(evmRpcUrl);
-  if (IS_TESTNET && !USDT_CONTRACT) {
+  const usdtWatcherEnabled = Boolean(USDT_CONTRACT);
+  if (!usdtWatcherEnabled && IS_TESTNET) {
     console.warn("⚠️  TESTNET_USDT_CONTRACT not set — USDT transfer watcher disabled in testnet mode");
-    return;
   }
-  const usdtContract = new ethers.Contract(USDT_CONTRACT, ERC20_ABI, provider);
 
-  console.log(`👁  Watching ${IS_TESTNET ? "EVM testnet" : "Polygon mainnet"} (ETH + USDT)...`);
+  console.log(`👁  Watching ${IS_TESTNET ? "EVM testnet" : "Polygon mainnet"} (${usdtWatcherEnabled ? "ETH + USDT" : "ETH only"})...`);
 
   // Watch USDT transfers
-  usdtContract.on("Transfer", async (from, to, value, event) => {
+  if (usdtWatcherEnabled) {
+    const usdtContract = new ethers.Contract(USDT_CONTRACT, ERC20_ABI, provider);
+    usdtContract.on("Transfer", async (from, to, value, event) => {
     try {
       const address = to.toLowerCase();
       const userRes = await pool.query(
@@ -81,7 +82,8 @@ async function watchPolygon() {
     } catch (err) {
       console.error("USDT transfer handler error:", err);
     }
-  });
+    });
+  }
 
   // Watch native ETH transfers by polling each new block
   provider.on("block", async (blockNumber) => {
