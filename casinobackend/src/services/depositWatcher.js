@@ -19,7 +19,9 @@ const { ensureAllDepositAddresses } = require("./addressGenerator");
 const { isTestnet, getEvmRpcUrl, getBtcExplorerBaseUrl, getUsdtContract } = require("../config/networkMode");
 
 const ETH_BACKFILL_BLOCKS = parseInt(process.env.ETH_BACKFILL_BLOCKS || "5000", 10);
-const ETH_BACKFILL_TX_HASHES = (process.env.ETH_BACKFILL_TX_HASHES || "").split(",").map((s) => s.trim()).filter(Boolean);
+const cliTxHashes = process.argv.slice(2).map((s) => s.trim()).filter((s) => s.startsWith("0x"));
+const envTxHashes = (process.env.ETH_BACKFILL_TX_HASHES || "").split(",").map((s) => s.trim()).filter(Boolean);
+const ETH_BACKFILL_TX_HASHES = [...new Set([...envTxHashes, ...cliTxHashes])];
 
 const CONFIRMATIONS_REQUIRED = {
   USDT: 2,
