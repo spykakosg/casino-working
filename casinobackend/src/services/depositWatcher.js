@@ -251,6 +251,7 @@ async function creditDeposit(userId, currency, amount, txHash, fromAddress, toAd
 // ─── Start All Watchers ───────────────────────────────────────────────────────
 async function start() {
   console.log("🔍 Starting deposit watcher service...");
+  console.log(`🐞 WATCHER_DEBUG=${WATCHER_DEBUG ? "enabled" : "disabled"}`);
   const assigned = await ensureAllDepositAddresses();
   if (assigned > 0) {
     console.log(`🏷️  Assigned missing deposit addresses for ${assigned} user(s)`);

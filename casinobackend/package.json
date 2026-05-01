@@ -10,7 +10,8 @@
     "watcher": "node src/services/depositWatcher.js",
     "withdrawal-worker": "node src/services/withdrawalWorker.js",
     "gen-addresses": "node src/services/addressGenerator.js",
-    "db:migrate": "node -e \"require('dotenv').config(); const {execSync}=require('child_process'); execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/schema.sql', {stdio:'inherit'})\""
+    "db:migrate": "node -e \"require('dotenv').config(); const {execSync}=require('child_process'); execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/schema.sql', {stdio:'inherit'})\"",
+    "watcher:debug": "WATCHER_DEBUG=true node src/services/depositWatcher.js"
   },
   "dependencies": {
     "bip32": "^5.0.0",
