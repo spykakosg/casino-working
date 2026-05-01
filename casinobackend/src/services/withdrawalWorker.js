@@ -133,11 +133,11 @@ async function executePayout(withdrawal) {
         const txHash = await sendBtcTestnetWithdrawal(withdrawal.to_address, withdrawal.amount);
         return { txHash, provider };
       } catch (err) {
-        if (String(process.env.BTC_TESTNET_ALLOW_STUB_FALLBACK || "true").toLowerCase() === "true") {
-          console.warn(`⚠️ BTC testnet payout fallback to stub: ${err.message}`);
+        if (String(process.env.BTC_TESTNET_ALLOW_STUB_FALLBACK || "false").toLowerCase() === "true") {
+          console.warn(`⚠️ BTC testnet payout fallback to stub (BTC_TESTNET_ALLOW_STUB_FALLBACK=true): ${err.message}`);
           return { txHash: `btc_stub_${withdrawal.id}_${Date.now()}`, provider: `${provider}-btc-stub` };
         }
-        throw err;
+        throw new Error(`BTC payout failed and no stub fallback is allowed. ${err.message}`);
       }
     }
   }
