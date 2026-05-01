@@ -68,17 +68,27 @@ async function watchPolygon() {
     try {
       const address = to.toLowerCase();
       const userRes = await pool.query(
-        "SELECT user_id FROM wallets WHERE LOWER(deposit_address) = $1 AND currency = 'USDT'",
-        [address]
+        `SELECT user_id, currency
+         FROM wallets
+         WHERE LOWER(deposit_address) = $1
+           AND currency = ANY($2::text[])
+         ORDER BY CASE
+           WHEN currency = 'USDT' THEN 0
+           WHEN currency = 'USDT_POLYGON' THEN 1
+           WHEN currency = 'USDT_TRON' THEN 2
+           ELSE 3
+         END
+         LIMIT 1`,
+        [address, ["USDT", "USDT_POLYGON", "USDT_TRON"]]
       );
       if (userRes.rows.length === 0) return;
 
-      const userId = userRes.rows[0].user_id;
+      const { user_id: userId, currency: matchedCurrency } = userRes.rows[0];
       const amount = parseFloat(ethers.formatUnits(value, 6)); // USDT has 6 decimals
 
-      console.log(`💰 USDT deposit detected: ${amount} USDT → user ${userId}`);
+      console.log(`💰 ${matchedCurrency} deposit detected: ${amount} USDT → user ${userId}`);
       const txHash = event?.log?.transactionHash || event?.transactionHash || null;
-      await creditDeposit(userId, "USDT", amount, txHash, from, to);
+      await creditDeposit(userId, matchedCurrency, amount, txHash, from, to);
     } catch (err) {
       console.error("USDT transfer handler error:", err);
     }
