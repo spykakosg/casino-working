@@ -7,10 +7,6 @@
 
 require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env") });
 const { ethers } = require("ethers");
-const bitcoin = require("bitcoinjs-lib");
-const ecc = require("tiny-secp256k1");
-const { ECPairFactory } = require("ecpair");
-const ECPair = ECPairFactory(ecc);
 const pool = require("../db/pool");
 const { isTestnet, getEvmRpcUrl, getUsdtContract } = require("../config/networkMode");
 
@@ -31,8 +27,20 @@ async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
     throw new Error("Missing TESTNET_BTC_WIF or TESTNET_BTC_FROM_ADDRESS");
   }
 
-  const network = bitcoin.networks.testnet;
-  const keyPair = ECPair.fromWIF(wif, network);
+  let bitcoin;
+  let ecc;
+  let keyPair;
+  let network;
+  try {
+    bitcoin = require("bitcoinjs-lib");
+    ecc = require("tiny-secp256k1");
+    const { ECPairFactory } = require("ecpair");
+    const ECPair = ECPairFactory(ecc);
+    network = bitcoin.networks.testnet;
+    keyPair = ECPair.fromWIF(wif, network);
+  } catch (err) {
+    throw new Error(`BTC withdrawals require bitcoinjs-lib, tiny-secp256k1, and ecpair dependencies. Run npm install in casinobackend. Original error: ${err.message}`);
+  }
   const base = (process.env.BTC_EXPLORER_BASE_URL || "https://blockstream.info/testnet/api").replace(/\/$/, "");
   const utxoResp = await fetch(`${base}/address/${fromAddress}/utxo`);
   if (!utxoResp.ok) throw new Error(`BTC UTXO fetch failed: ${utxoResp.status}`);
