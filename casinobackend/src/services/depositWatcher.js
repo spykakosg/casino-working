@@ -131,19 +131,29 @@ async function watchPolygon() {
         const address = tx.to.toLowerCase();
 
         const userRes = await pool.query(
-          "SELECT user_id FROM wallets WHERE LOWER(deposit_address) = $1 AND currency = 'ETH_POLYGON'",
-          [address]
+          `SELECT user_id, currency
+           FROM wallets
+           WHERE LOWER(deposit_address) = $1
+             AND currency = ANY($2::text[])
+           ORDER BY CASE
+             WHEN currency = 'ETH_POLYGON' THEN 0
+             WHEN currency = 'ETH_SEPOLIA' THEN 1
+             WHEN currency = 'ETH' THEN 2
+             ELSE 3
+           END
+           LIMIT 1`,
+          [address, ["ETH_POLYGON", "ETH_SEPOLIA", "ETH"]]
         );
         if (userRes.rows.length === 0) {
           debugLog("ETH tx did not match a wallet", tx.hash, address);
           continue;
         }
 
-        const userId = userRes.rows[0].user_id;
+        const { user_id: userId, currency: matchedCurrency } = userRes.rows[0];
         const amount = parseFloat(ethers.formatEther(tx.value));
 
-        console.log(`💰 ETH_POLYGON deposit detected: ${amount} ETH → user ${userId}`);
-        await creditDeposit(userId, "ETH_POLYGON", amount, tx.hash, tx.from, tx.to);
+        console.log(`💰 ${matchedCurrency} deposit detected: ${amount} ETH → user ${userId}`);
+        await creditDeposit(userId, matchedCurrency, amount, tx.hash, tx.from, tx.to);
       }
     } catch (err) {
       console.error("ETH block watcher error:", err);
