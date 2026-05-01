@@ -28,12 +28,10 @@ const IS_TESTNET = isTestnet;
 const USDT_CONTRACT = getUsdtContract();
 // ERC-20 Transfer event ABI (minimal)
 
-const WATCHER_DEBUG = String(process.env.WATCHER_DEBUG || "").toLowerCase() === "true";
+const WATCHER_DEBUG = true;
 
 function debugLog(...args) {
-  if (WATCHER_DEBUG) {
-    console.log("[watcher:debug]", ...args);
-  }
+  console.log("[watcher:debug]", ...args);
 }
 
 const ERC20_ABI = [
