@@ -9,9 +9,11 @@
  */
 
 const express = require("express");
+const { ethers } = require("ethers");
 const router = express.Router();
 const auth = require("../middleware/auth");
 const { generateAddressForUser } = require("../services/addressGenerator");
+const { getEvmRpcUrl, getUsdtContract } = require("../config/networkMode");
 
 const SUPPORTED_CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
 
@@ -25,6 +27,46 @@ function getWalletCurrencyCandidates(currency) {
   return currency === "USDT" ? ["USDT", "USDT_POLYGON", "USDT_TRON"] : [currency];
 }
 
+
+
+
+const FEE_PRIORITY_MULTIPLIER = { low: 0.9, medium: 1.0, high: 1.25 };
+
+async function estimateWithdrawalNetworkFee(currency, toAddress, amount, feePriority = "medium") {
+  const multiplier = FEE_PRIORITY_MULTIPLIER[feePriority] || FEE_PRIORITY_MULTIPLIER.medium;
+
+  if (currency === "BTC") {
+    const base = parseFloat(process.env.BTC_WITHDRAWAL_NETWORK_FEE || "0.00005");
+    return parseFloat((base * multiplier).toFixed(8));
+  }
+
+  const rpcUrl = getEvmRpcUrl();
+  if (!rpcUrl) return 0;
+  const provider = rpcUrl.startsWith("ws") ? new ethers.WebSocketProvider(rpcUrl) : new ethers.JsonRpcProvider(rpcUrl);
+  const feeData = await provider.getFeeData();
+  const gasPrice = feeData.maxFeePerGas || feeData.gasPrice;
+  if (!gasPrice) return 0;
+
+  let gasLimit;
+  if (currency === "ETH_POLYGON") {
+    gasLimit = await provider.estimateGas({ to: toAddress, value: ethers.parseEther(String(amount)) });
+  } else if (currency === "USDT") {
+    const usdt = getUsdtContract();
+    if (!usdt) return 0;
+    const iface = new ethers.Interface(["function transfer(address to, uint256 amount) returns (bool)", "function decimals() view returns (uint8)"]);
+    const decimalsResult = await provider.call({ to: usdt, data: iface.encodeFunctionData("decimals", []) });
+    const decimals = Number(iface.decodeFunctionResult("decimals", decimalsResult)[0]);
+    const data = iface.encodeFunctionData("transfer", [toAddress, ethers.parseUnits(String(amount), decimals)]);
+    gasLimit = await provider.estimateGas({ to: usdt, data });
+  } else {
+    return 0;
+  }
+
+  const weiFee = gasLimit * gasPrice;
+  const nativeFee = parseFloat(ethers.formatEther(weiFee));
+  const adjusted = nativeFee * multiplier;
+  return parseFloat(adjusted.toFixed(8));
+}
 
 const withdrawalVelocity = new Map();
 function enforceWithdrawalVelocity(req, res, next) {
@@ -181,10 +223,13 @@ router.get("/deposits", auth, async (req, res) => {
 
 // ─── Request Withdrawal ───────────────────────────────────────────────────────
 router.post("/withdraw", auth, enforceWithdrawalVelocity, async (req, res) => {
-  const { currency, amount, toAddress } = req.body;
+  const { currency, amount, toAddress, feePriority = "medium" } = req.body;
 
   if (!currency || !amount || !toAddress) {
     return res.status(400).json({ error: "currency, amount, and toAddress are required" });
+  }
+  if (!FEE_PRIORITY_MULTIPLIER[feePriority]) {
+    return res.status(400).json({ error: "feePriority must be low, medium, or high" });
   }
   if (!SUPPORTED_CURRENCIES.includes(currency)) {
     return res.status(400).json({ error: "Unsupported currency" });
@@ -200,7 +245,8 @@ router.post("/withdraw", auth, enforceWithdrawalVelocity, async (req, res) => {
     return res.status(400).json({ error: `Minimum withdrawal is ${info.minWithdraw} ${info.name}` });
   }
 
-  const totalDeducted = parseFloat((withdrawAmount + info.fee).toFixed(8));
+  const networkFee = await estimateWithdrawalNetworkFee(currency, toAddress, withdrawAmount, feePriority);
+  const totalDeducted = parseFloat((withdrawAmount + networkFee).toFixed(8));
   const reviewRequired = withdrawAmount >= parseFloat(process.env.WITHDRAWAL_REVIEW_THRESHOLD || 5000);
 
   const client = await req.db.connect();
@@ -244,7 +290,7 @@ router.post("/withdraw", auth, enforceWithdrawalVelocity, async (req, res) => {
       `INSERT INTO withdrawals (user_id, currency, amount, fee, to_address, review_required)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, status`,
-      [req.user.id, currency, withdrawAmount, info.fee, toAddress, reviewRequired]
+      [req.user.id, currency, withdrawAmount, networkFee, toAddress, reviewRequired]
     );
 
     await client.query("COMMIT");
@@ -255,7 +301,7 @@ router.post("/withdraw", auth, enforceWithdrawalVelocity, async (req, res) => {
         id: wdRes.rows[0].id,
         currency,
         amount: withdrawAmount,
-        fee: info.fee,
+        fee: networkFee,
         toAddress,
         status: wdRes.rows[0].status,
         reviewRequired,
