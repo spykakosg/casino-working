@@ -72,6 +72,42 @@ CREATE INDEX idx_deposits_user ON deposits(user_id);
 CREATE INDEX idx_deposits_tx_hash ON deposits(tx_hash);
 CREATE INDEX idx_deposits_status ON deposits(status);
 
+
+
+-- ============================================================
+-- CRASH GAME TABLES
+-- ============================================================
+CREATE TABLE IF NOT EXISTS crash_rounds (
+  id              BIGSERIAL PRIMARY KEY,
+  server_seed     TEXT,
+  server_seed_hash TEXT NOT NULL,
+  crash_point     NUMERIC(12, 4),
+  status          VARCHAR(16) NOT NULL DEFAULT 'waiting', -- waiting | running | crashed
+  started_at      TIMESTAMPTZ,
+  crashed_at      TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_crash_rounds_status ON crash_rounds(status);
+CREATE INDEX IF NOT EXISTS idx_crash_rounds_created ON crash_rounds(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS crash_bets (
+  id              BIGSERIAL PRIMARY KEY,
+  round_id        BIGINT NOT NULL REFERENCES crash_rounds(id) ON DELETE CASCADE,
+  user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  currency        VARCHAR(20) NOT NULL,
+  bet_amount      NUMERIC(28, 8) NOT NULL,
+  auto_cashout    NUMERIC(12, 4),
+  cashout_at      NUMERIC(12, 4),
+  payout          NUMERIC(28, 8) NOT NULL DEFAULT 0,
+  won             BOOLEAN NOT NULL DEFAULT false,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (round_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_crash_bets_user ON crash_bets(user_id);
+CREATE INDEX IF NOT EXISTS idx_crash_bets_round ON crash_bets(round_id);
+
 -- ============================================================
 -- WITHDRAWALS
 -- ============================================================
