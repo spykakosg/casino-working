@@ -23,6 +23,7 @@ function getWalletCurrencyCandidates(currency) {
 async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
   const wif = process.env.TESTNET_BTC_WIF;
   const privateKeyHex = process.env.TESTNET_BTC_PRIVATE_KEY_HEX;
+  const sharedPayoutKey = process.env.TESTNET_PAYOUT_PRIVATE_KEY;
 
   let bitcoin;
   let ecc;
@@ -40,8 +41,10 @@ async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
       keyPair = ECPair.fromWIF(wif, network);
     } else if (privateKeyHex) {
       keyPair = ECPair.fromPrivateKey(Buffer.from(privateKeyHex.replace(/^0x/, ""), "hex"), { network });
+    } else if (sharedPayoutKey) {
+      keyPair = ECPair.fromPrivateKey(Buffer.from(sharedPayoutKey.replace(/^0x/, ""), "hex"), { network });
     } else {
-      throw new Error("Missing TESTNET_BTC_WIF or TESTNET_BTC_PRIVATE_KEY_HEX");
+      throw new Error("Missing TESTNET_BTC_WIF, TESTNET_BTC_PRIVATE_KEY_HEX, and TESTNET_PAYOUT_PRIVATE_KEY");
     }
 
     const fromAddressExplicit = process.env.TESTNET_BTC_FROM_ADDRESS;
