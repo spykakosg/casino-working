@@ -89,6 +89,86 @@ WALLET_MNEMONIC=  ← generate with: node -e "const {ethers}=require('ethers'); 
 
 For ALCHEMY_POLYGON_URL: sign up free at https://alchemy.com, create a Polygon app, copy the HTTPS URL.
 
+### Optional: Testnet mode (recommended before mainnet)
+
+Add these to `.env`:
+
+```
+TESTNET_MODE=true
+TESTNET_EVM_RPC_URL=https://rpc-amoy.polygon.technology
+TESTNET_USDT_CONTRACT=0x...   # your Amoy test USDT contract
+BTC_EXPLORER_BASE_URL=https://blockstream.info/testnet/api
+
+# For real testnet payouts from withdrawalWorker
+PAYOUT_PROVIDER=testnet
+TESTNET_PAYOUT_PRIVATE_KEY=0x...
+```
+
+Notes:
+- In testnet mode, deposit watcher uses `TESTNET_EVM_RPC_URL` instead of `ALCHEMY_POLYGON_URL`.
+- BTC testnet deposits are supported via testnet explorer URL.
+- BTC testnet withdrawals are not yet implemented in worker (ETH/USDT testnet withdrawals are implemented).
+
+
+### Windows CMD quick-start (copy/paste)
+
+If you are using **Command Prompt (cmd.exe)**, use these commands:
+
+```cmd
+cd /d C:\path\to\casino-working\casinobackend
+npm install
+
+:: set testnet env for current cmd window
+set TESTNET_MODE=true
+set TESTNET_EVM_RPC_URL=https://sepolia.infura.io/v3/YOUR_KEY
+set TESTNET_USDT_CONTRACT=0x94f29c9e01a5b19546231141b870d14074be939c
+set BTC_EXPLORER_BASE_URL=https://blockstream.info/testnet/api
+set PAYOUT_PROVIDER=testnet
+set TESTNET_PAYOUT_PRIVATE_KEY=0xYOUR_TESTNET_PRIVATE_KEY
+
+:: run app + workers
+npm run dev
+```
+
+Open two more CMD windows in the same folder and run:
+
+```cmd
+npm run watcher
+npm run withdrawal-worker
+```
+
+If you prefer `.env`, create `casinobackend\.env` and put the same values there.
+
+### Backup wallets table from Windows CMD
+
+To run this backup SQL from **Command Prompt (cmd.exe)**, use one of these options:
+
+**Option A — open psql then paste SQL**
+
+```cmd
+cd /d C:\path\to\casino-working\casinobackend
+psql -U postgres -d casino_db
+```
+
+Then paste:
+
+```sql
+CREATE TABLE wallets_backup_mainnet_2026_04_30 AS
+SELECT * FROM wallets;
+```
+
+Exit psql with:
+
+```sql
+\q
+```
+
+**Option B — one command from CMD**
+
+```cmd
+psql -U postgres -d casino_db -c "CREATE TABLE wallets_backup_mainnet_2026_04_30 AS SELECT * FROM wallets;"
+```
+
 ### Step 5 — Run the database schema
 
 ```powershell
@@ -189,3 +269,47 @@ npm test
 ```sql
 UPDATE users SET role = 'admin' WHERE username = 'yourusername';
 ```
+
+
+## Alternative implementation options
+
+If the current all-in-one implementation feels too complex, here are simpler ways to ship the same capabilities incrementally:
+
+1. **Phase features behind flags**
+   - Keep existing routes/UI hidden behind env-based feature flags.
+   - Roll out one domain at a time (`referrals`, then `account recovery`, then `withdrawal queue`).
+
+2. **Use managed providers first, then self-host**
+   - Email verification/reset: use Auth0/Firebase/Supabase auth flows instead of custom token tables.
+   - Leaderboards/referrals: use a managed analytics store or Redis sorted sets before a full relational design.
+
+3. **Replace worker queue with a cron-based puller (short term)**
+   - Instead of a continuously running worker, run a scheduled job every minute to process pending withdrawals.
+   - This reduces operational complexity while preserving auditability and retries.
+
+4. **Split PRs by risk area**
+   - PR A: DB schema + migrations only.
+   - PR B: backend APIs only.
+   - PR C: frontend pages/components only.
+   - PR D: blockchain integrations and job worker only.
+
+5. **Keep blockchain integrations adapter-only until production readiness**
+   - Ship interfaces and mock adapters first.
+   - Add BTC/EVM concrete implementations once secrets, providers, monitoring, and reconciliation playbooks are in place.
+
+6. **Start with read-only community features**
+   - Launch leaderboard/provably-fair verifier first (low risk), then referrals payouts after monitoring and abuse controls are validated.
+
+7. **Prefer existing queue technology**
+   - Use BullMQ/SQS/Cloud Tasks instead of custom SQL job-claiming logic if your team already supports one queue platform.
+
+8. **Move anti-abuse to perimeter controls**
+   - Keep in-app limits minimal.
+   - Offload rate limits/challenges to API gateway/WAF for consistency and easier tuning.
+
+9. **Adopt “minimal viable recovery”**
+   - Implement password reset first.
+   - Add email verification enforcement later (e.g., only required at withdrawal time).
+
+10. **Introduce formal acceptance criteria per feature**
+   - For each domain, define “done” checks (unit/integration tests + runbook + observability signals) before enabling in production.

@@ -7,13 +7,10 @@ import {
   getBalances, getDepositAddress, requestWithdrawal,
   getDepositHistory, getWithdrawalHistory,
 } from "@/lib/api";
+import { CURRENCY_META, DEFAULT_CURRENCIES } from "@/lib/currencies";
 
-const CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
-const CURRENCY_LABELS = {
-  USDT: { name: "USDT", network: "Polygon", color: "text-purple-400" },
-  ETH_POLYGON:  { name: "ETH",  network: "Polygon", color: "text-blue-400" },
-  BTC:          { name: "BTC",  network: "Bitcoin", color: "text-orange-400" },
-};
+const CURRENCIES = DEFAULT_CURRENCIES;
+const CURRENCY_LABELS = CURRENCY_META;
 
 export default function WalletPage() {
   const { user, loading: authLoading } = useAuth();

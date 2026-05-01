@@ -11,6 +11,7 @@
 const express = require("express");
 const router = express.Router();
 const auth = require("../middleware/auth");
+const { generateAddressForUser } = require("../services/addressGenerator");
 
 const SUPPORTED_CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
 
@@ -22,6 +23,24 @@ const CURRENCY_INFO = {
 
 function getWalletCurrencyCandidates(currency) {
   return currency === "USDT" ? ["USDT", "USDT_POLYGON", "USDT_TRON"] : [currency];
+}
+
+
+const withdrawalVelocity = new Map();
+function enforceWithdrawalVelocity(req, res, next) {
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "unknown";
+  const key = `${req.user?.id || "anon"}::${ip}`;
+  const now = Date.now();
+  const windowMs = 60 * 60 * 1000;
+  const max = 5;
+  const arr = withdrawalVelocity.get(key) || [];
+  const filtered = arr.filter((t) => now - t < windowMs);
+  if (filtered.length >= max) {
+    return res.status(429).json({ error: "Too many withdrawal attempts. Try again later." });
+  }
+  filtered.push(now);
+  withdrawalVelocity.set(key, filtered);
+  next();
 }
 
 // ─── Get All Balances ─────────────────────────────────────────────────────────
@@ -83,13 +102,30 @@ router.get("/deposit/:currency", auth, async (req, res) => {
       return res.status(404).json({ error: "Wallet not found" });
     }
 
-    const address = result.rows[0].deposit_address;
+    let address = result.rows[0].deposit_address;
+    if (!address) {
+      await generateAddressForUser(req.user.id);
+      const refreshRes = await req.db.query(
+        `SELECT deposit_address
+         FROM wallets
+         WHERE user_id = $1
+           AND currency = ANY($2::text[])
+         ORDER BY CASE
+           WHEN currency = 'USDT' THEN 0
+           WHEN currency = 'USDT_POLYGON' THEN 1
+           WHEN currency = 'USDT_TRON' THEN 2
+           ELSE 3
+         END
+         LIMIT 1`,
+        [req.user.id, getWalletCurrencyCandidates(currency)]
+      );
+      address = refreshRes.rows[0]?.deposit_address || null;
+    }
 
     if (!address) {
-      // Address not yet generated — this will be populated by the deposit watcher service
       return res.status(503).json({
         error: "Deposit address not yet assigned. Please try again in a moment.",
-        hint: "The deposit watcher service needs to be running to assign addresses.",
+        hint: "Address generation failed. Check backend logs and wallet configuration.",
       });
     }
 
@@ -102,6 +138,26 @@ router.get("/deposit/:currency", auth, async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ error: "Failed to fetch deposit address" });
+  }
+});
+
+
+// ─── Generate Deposit Address (on-demand) ───────────────────────────────────
+router.post("/deposit/:currency/generate", auth, async (req, res) => {
+  const { currency } = req.params;
+  if (!SUPPORTED_CURRENCIES.includes(currency)) {
+    return res.status(400).json({ error: "Unsupported currency" });
+  }
+
+  try {
+    await generateAddressForUser(req.user.id);
+    const addrRes = await req.db.query(
+      `SELECT deposit_address FROM wallets WHERE user_id = $1 AND currency = ANY($2::text[]) LIMIT 1`,
+      [req.user.id, getWalletCurrencyCandidates(currency)]
+    );
+    return res.json({ success: true, currency, address: addrRes.rows[0]?.deposit_address || null });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to generate deposit address" });
   }
 });
 
@@ -124,7 +180,7 @@ router.get("/deposits", auth, async (req, res) => {
 });
 
 // ─── Request Withdrawal ───────────────────────────────────────────────────────
-router.post("/withdraw", auth, async (req, res) => {
+router.post("/withdraw", auth, enforceWithdrawalVelocity, async (req, res) => {
   const { currency, amount, toAddress } = req.body;
 
   if (!currency || !amount || !toAddress) {
