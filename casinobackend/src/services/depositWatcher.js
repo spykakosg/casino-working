@@ -63,7 +63,7 @@ async function watchPolygon() {
   console.log(`👁  Watching ${IS_TESTNET ? "EVM testnet" : "Polygon mainnet"} (ETH + USDT)...`);
 
   // Watch USDT transfers
-  usdtContract.on("Transfer", async (from, to, value) => {
+  usdtContract.on("Transfer", async (from, to, value, event) => {
     try {
       const address = to.toLowerCase();
       const userRes = await pool.query(
@@ -76,7 +76,8 @@ async function watchPolygon() {
       const amount = parseFloat(ethers.formatUnits(value, 6)); // USDT has 6 decimals
 
       console.log(`💰 USDT deposit detected: ${amount} USDT → user ${userId}`);
-      await creditDeposit(userId, "USDT", amount, null, from, to);
+      const txHash = event?.log?.transactionHash || event?.transactionHash || null;
+      await creditDeposit(userId, "USDT", amount, txHash, from, to);
     } catch (err) {
       console.error("USDT transfer handler error:", err);
     }
@@ -88,8 +89,9 @@ async function watchPolygon() {
       const block = await provider.getBlock(blockNumber, true);
       if (!block || !block.transactions) return;
 
-      for (const tx of block.transactions) {
-        if (!tx.to || tx.value === 0n) continue;
+      for (const txRef of block.transactions) {
+        const tx = typeof txRef === "string" ? await provider.getTransaction(txRef) : txRef;
+        if (!tx || !tx.to || tx.value === 0n) continue;
         const address = tx.to.toLowerCase();
 
         const userRes = await pool.query(
