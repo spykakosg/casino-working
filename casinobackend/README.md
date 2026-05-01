@@ -139,6 +139,36 @@ npm run withdrawal-worker
 
 If you prefer `.env`, create `casinobackend\.env` and put the same values there.
 
+### Backup wallets table from Windows CMD
+
+To run this backup SQL from **Command Prompt (cmd.exe)**, use one of these options:
+
+**Option A — open psql then paste SQL**
+
+```cmd
+cd /d C:\path\to\casino-working\casinobackend
+psql -U postgres -d casino_db
+```
+
+Then paste:
+
+```sql
+CREATE TABLE wallets_backup_mainnet_2026_04_30 AS
+SELECT * FROM wallets;
+```
+
+Exit psql with:
+
+```sql
+\q
+```
+
+**Option B — one command from CMD**
+
+```cmd
+psql -U postgres -d casino_db -c "CREATE TABLE wallets_backup_mainnet_2026_04_30 AS SELECT * FROM wallets;"
+```
+
 ### Step 5 — Run the database schema
 
 ```powershell
