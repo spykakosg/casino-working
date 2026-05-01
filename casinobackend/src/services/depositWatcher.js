@@ -85,6 +85,19 @@ async function logTrackedEvmAddresses() {
   }
 }
 
+
+async function resolveTransactionWithRetry(provider, txRef, attempts = 3, delayMs = 400) {
+  if (typeof txRef !== "string") return txRef;
+  for (let i = 0; i < attempts; i++) {
+    const tx = await provider.getTransaction(txRef);
+    if (tx) return tx;
+    if (i < attempts - 1) {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  return null;
+}
+
 async function watchPolygon() {
   if (!hasUsableAlchemyUrl()) {
     console.warn("⚠️  ALCHEMY_POLYGON_URL missing/invalid (or still using YOUR_ALCHEMY_KEY) — Polygon watcher disabled");
@@ -178,7 +191,10 @@ async function watchPolygon() {
     if (!block || !block.transactions) return;
 
     for (const txRef of block.transactions) {
-      const tx = typeof txRef === "string" ? await provider.getTransaction(txRef) : txRef;
+      const tx = await resolveTransactionWithRetry(provider, txRef);
+      if (!tx && typeof txRef === "string") {
+        debugLog("Transaction not yet available after retries", txRef);
+      }
       await processEthTransaction(tx, typeof txRef === "string" ? txRef : txRef?.hash);
     }
   }
