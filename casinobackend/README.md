@@ -102,12 +102,15 @@ BTC_EXPLORER_BASE_URL=https://blockstream.info/testnet/api
 # For real testnet payouts from withdrawalWorker
 PAYOUT_PROVIDER=testnet
 TESTNET_PAYOUT_PRIVATE_KEY=0x...
+TESTNET_BTC_WIF=c...           # preferred for testnet BTC payouts
+# or TESTNET_BTC_PRIVATE_KEY_HEX=...
+# optional: TESTNET_BTC_FROM_ADDRESS=tb1... (auto-derived from key if omitted)
 ```
 
 Notes:
 - In testnet mode, deposit watcher uses `TESTNET_EVM_RPC_URL` instead of `ALCHEMY_POLYGON_URL`.
 - BTC testnet deposits are supported via testnet explorer URL.
-- BTC testnet withdrawals are not yet implemented in worker (ETH/USDT testnet withdrawals are implemented).
+- BTC testnet withdrawals are implemented in worker. Configure `TESTNET_BTC_WIF` (or `TESTNET_BTC_PRIVATE_KEY_HEX`) and fund the corresponding testnet address before enabling BTC payouts.
 
 
 ### Windows CMD quick-start (copy/paste)

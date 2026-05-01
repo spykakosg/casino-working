@@ -22,24 +22,38 @@ function getWalletCurrencyCandidates(currency) {
 
 async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
   const wif = process.env.TESTNET_BTC_WIF;
-  const fromAddress = process.env.TESTNET_BTC_FROM_ADDRESS;
-  if (!wif || !fromAddress) {
-    throw new Error("Missing TESTNET_BTC_WIF or TESTNET_BTC_FROM_ADDRESS");
-  }
+  const privateKeyHex = process.env.TESTNET_BTC_PRIVATE_KEY_HEX;
 
   let bitcoin;
   let ecc;
   let keyPair;
   let network;
+  let fromAddress;
   try {
     bitcoin = require("bitcoinjs-lib");
     ecc = require("tiny-secp256k1");
     const { ECPairFactory } = require("ecpair");
     const ECPair = ECPairFactory(ecc);
     network = bitcoin.networks.testnet;
-    keyPair = ECPair.fromWIF(wif, network);
+
+    if (wif) {
+      keyPair = ECPair.fromWIF(wif, network);
+    } else if (privateKeyHex) {
+      keyPair = ECPair.fromPrivateKey(Buffer.from(privateKeyHex.replace(/^0x/, ""), "hex"), { network });
+    } else {
+      throw new Error("Missing TESTNET_BTC_WIF or TESTNET_BTC_PRIVATE_KEY_HEX");
+    }
+
+    const fromAddressExplicit = process.env.TESTNET_BTC_FROM_ADDRESS;
+    if (fromAddressExplicit) {
+      fromAddress = fromAddressExplicit;
+    } else {
+      const payment = bitcoin.payments.p2wpkh({ pubkey: Buffer.from(keyPair.publicKey), network });
+      if (!payment.address) throw new Error("Failed to derive TESTNET_BTC_FROM_ADDRESS from configured key");
+      fromAddress = payment.address;
+    }
   } catch (err) {
-    throw new Error(`BTC withdrawals require bitcoinjs-lib, tiny-secp256k1, and ecpair dependencies. Run npm install in casinobackend. Original error: ${err.message}`);
+    throw new Error(`BTC withdrawals require valid BTC key config and bitcoinjs-lib/tiny-secp256k1/ecpair deps. ${err.message}`);
   }
   const base = (process.env.BTC_EXPLORER_BASE_URL || "https://blockstream.info/testnet/api").replace(/\/$/, "");
   const utxoResp = await fetch(`${base}/address/${fromAddress}/utxo`);
