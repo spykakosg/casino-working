@@ -42,7 +42,7 @@ function hasUsableAlchemyUrl() {
 function isLikelyBitcoinAddress(address) {
   if (!address) return false;
   if (address.includes("placeholder")) return false;
-  return /^(bc1|[13])[a-zA-HJ-NP-Z0-9]{20,}$/i.test(address);
+  return /^(tb1|bc1|[13mn2])[a-zA-HJ-NP-Z0-9]{20,}$/i.test(address);
 }
 
 // ─── Polygon (ETH + USDT) ─────────────────────────────────────────────────────
@@ -146,7 +146,15 @@ async function watchBitcoin() {
           const out = tx.vout?.find((o) => o.scriptpubkey_address === wallet.deposit_address);
           if (!out) continue;
           const amount = out.value / 100_000_000; // satoshis to BTC
-          const confirmations = tx.status?.confirmed ? (tx.status.block_height ? 6 : 0) : 0;
+          let confirmations = 0;
+          if (tx.status?.confirmed && tx.status.block_height) {
+            const tipResp = await fetch(`${base}/blocks/tip/height`);
+            const tipText = await tipResp.text();
+            const tipHeight = parseInt(tipText, 10);
+            if (Number.isFinite(tipHeight)) {
+              confirmations = Math.max(0, tipHeight - tx.status.block_height + 1);
+            }
+          }
           if (confirmations < CONFIRMATIONS_REQUIRED.BTC) continue;
           await creditDeposit(wallet.user_id, "BTC", amount, tx.txid, null, wallet.deposit_address);
         }
