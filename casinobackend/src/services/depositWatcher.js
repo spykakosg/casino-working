@@ -18,7 +18,8 @@ const pool = require("../db/pool");
 const { ensureAllDepositAddresses } = require("./addressGenerator");
 const { isTestnet, getEvmRpcUrl, getBtcExplorerBaseUrl, getUsdtContract } = require("../config/networkMode");
 
-const ETH_BACKFILL_BLOCKS = parseInt(process.env.ETH_BACKFILL_BLOCKS || "50", 10);
+const ETH_BACKFILL_BLOCKS = parseInt(process.env.ETH_BACKFILL_BLOCKS || "5000", 10);
+const ETH_BACKFILL_TX_HASHES = (process.env.ETH_BACKFILL_TX_HASHES || "").split(",").map((s) => s.trim()).filter(Boolean);
 
 const CONFIRMATIONS_REQUIRED = {
   USDT: 2,
@@ -136,6 +137,39 @@ async function watchPolygon() {
     });
   }
 
+  async function processEthTransaction(tx, txHashFallback = null) {
+    if (!tx || !tx.to || tx.value === 0n) {
+      debugLog("Skipping tx without payable recipient/value", txHashFallback || tx?.hash);
+      return;
+    }
+    const address = tx.to.toLowerCase();
+
+    const userRes = await pool.query(
+      `SELECT user_id, currency
+       FROM wallets
+       WHERE LOWER(deposit_address) = $1
+         AND currency = ANY($2::text[])
+       ORDER BY CASE
+         WHEN currency = 'ETH_POLYGON' THEN 0
+         WHEN currency = 'ETH_SEPOLIA' THEN 1
+         WHEN currency = 'ETH' THEN 2
+         ELSE 3
+       END
+       LIMIT 1`,
+      [address, ["ETH_POLYGON", "ETH_SEPOLIA", "ETH"]]
+    );
+    if (userRes.rows.length === 0) {
+      debugLog("ETH tx did not match a wallet", tx.hash || txHashFallback, address);
+      return;
+    }
+
+    const { user_id: userId, currency: matchedCurrency } = userRes.rows[0];
+    const amount = parseFloat(ethers.formatEther(tx.value));
+
+    console.log(`💰 ${matchedCurrency} deposit detected: ${amount} ETH → user ${userId}`);
+    await creditDeposit(userId, matchedCurrency, amount, tx.hash || txHashFallback, tx.from, tx.to);
+  }
+
   async function processEthBlock(blockNumber) {
     const block = await provider.getBlock(blockNumber, true);
     debugLog("Processing block", blockNumber);
@@ -143,36 +177,21 @@ async function watchPolygon() {
 
     for (const txRef of block.transactions) {
       const tx = typeof txRef === "string" ? await provider.getTransaction(txRef) : txRef;
-      if (!tx || !tx.to || tx.value === 0n) {
-        debugLog("Skipping tx without payable recipient/value", typeof txRef === "string" ? txRef : txRef?.hash);
+      await processEthTransaction(tx, typeof txRef === "string" ? txRef : txRef?.hash);
+    }
+  }
+
+  for (const txHash of ETH_BACKFILL_TX_HASHES) {
+    try {
+      const tx = await provider.getTransaction(txHash);
+      if (!tx) {
+        console.warn(`⚠️ ETH backfill tx not found: ${txHash}`);
         continue;
       }
-      const address = tx.to.toLowerCase();
-
-      const userRes = await pool.query(
-        `SELECT user_id, currency
-         FROM wallets
-         WHERE LOWER(deposit_address) = $1
-           AND currency = ANY($2::text[])
-         ORDER BY CASE
-           WHEN currency = 'ETH_POLYGON' THEN 0
-           WHEN currency = 'ETH_SEPOLIA' THEN 1
-           WHEN currency = 'ETH' THEN 2
-           ELSE 3
-         END
-         LIMIT 1`,
-        [address, ["ETH_POLYGON", "ETH_SEPOLIA", "ETH"]]
-      );
-      if (userRes.rows.length === 0) {
-        debugLog("ETH tx did not match a wallet", tx.hash, address);
-        continue;
-      }
-
-      const { user_id: userId, currency: matchedCurrency } = userRes.rows[0];
-      const amount = parseFloat(ethers.formatEther(tx.value));
-
-      console.log(`💰 ${matchedCurrency} deposit detected: ${amount} ETH → user ${userId}`);
-      await creditDeposit(userId, matchedCurrency, amount, tx.hash, tx.from, tx.to);
+      console.log(`🔁 Backfilling specific ETH tx ${txHash}...`);
+      await processEthTransaction(tx, txHash);
+    } catch (err) {
+      console.error(`ETH tx backfill error for ${txHash}:`, err.message || err);
     }
   }
 
