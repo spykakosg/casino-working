@@ -18,6 +18,8 @@ export default function WalletPage() {
 
   const [balances, setBalances]           = useState({});
   const [activeCurrency, setActiveCurrency] = useState("USDT_SEPOLIA");
+
+  const walletCurrency = mapWalletCurrency(activeCurrency);
   const [tab, setTab]                     = useState("deposit"); // deposit | withdraw | history
   const [depositAddress, setDepositAddress] = useState(null);
   const [depositLoading, setDepositLoading] = useState(false);
@@ -45,7 +47,7 @@ export default function WalletPage() {
 
   useEffect(() => {
     if (tab === "deposit") fetchDepositAddress();
-  }, [tab, activeCurrency]);
+  }, [tab, activeCurrency, walletCurrency]);
 
   async function fetchBalances() {
     try {
@@ -59,7 +61,7 @@ export default function WalletPage() {
   async function fetchDepositAddress() {
     setDepositLoading(true);
     try {
-      const data = await getDepositAddress(activeCurrency);
+      const data = await getDepositAddress(walletCurrency);
       setDepositAddress(data.address);
     } catch (err) {
       setDepositAddress(null);
@@ -82,7 +84,7 @@ export default function WalletPage() {
     setWithdrawSuccess("");
     setWithdrawLoading(true);
     try {
-      await requestWithdrawal(activeCurrency, parseFloat(withdrawAmount), withdrawAddress);
+      await requestWithdrawal(walletCurrency, parseFloat(withdrawAmount), withdrawAddress);
       setWithdrawSuccess("Withdrawal submitted successfully!");
       setWithdrawAmount("");
       setWithdrawAddress("");
@@ -116,7 +118,7 @@ export default function WalletPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {CURRENCIES.map(c => {
             const info = CURRENCY_LABELS[c];
-            const bal = balances[c] ?? 0;
+            const bal = balances[mapWalletCurrency(c)] ?? 0;
             return (
               <button
                 key={c}
@@ -210,7 +212,7 @@ export default function WalletPage() {
                 <div>
                   <h3 className="font-semibold mb-1">Withdraw {CURRENCY_LABELS[activeCurrency].name}</h3>
                   <p className="text-casino-muted text-sm">
-                    Available: <span className="text-white font-mono">{(balances[activeCurrency] ?? 0).toFixed(8)}</span>
+                    Available: <span className="text-white font-mono">{(balances[walletCurrency] ?? 0).toFixed(8)}</span>
                   </p>
                 </div>
 
@@ -311,6 +313,12 @@ export default function WalletPage() {
       </main>
     </div>
   );
+}
+
+function mapWalletCurrency(currency) {
+  if (currency === "USDT_SEPOLIA") return "USDT";
+  if (currency === "ETH_SEPOLIA") return "ETH_POLYGON";
+  return currency;
 }
 
 function StatusBadge({ status }) {
