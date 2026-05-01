@@ -230,7 +230,7 @@ export default function WalletPage() {
                 <div>
                   <label className="text-xs text-casino-muted font-mono uppercase tracking-widest block mb-2">Amount</label>
                   <input
-                    type="number" min="0.01" step="0.01"
+                    type="number" min="0" step="0.00000001"
                     value={withdrawAmount}
                     onChange={e => setWithdrawAmount(e.target.value)}
                     className="w-full bg-casino-surface border border-casino-border rounded-lg px-4 py-3 text-white font-mono focus:outline-none focus:border-gold transition-colors"

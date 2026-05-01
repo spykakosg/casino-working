@@ -16,9 +16,9 @@ const { generateAddressForUser } = require("../services/addressGenerator");
 const SUPPORTED_CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
 
 const CURRENCY_INFO = {
-  USDT: { name: "USDT", network: "Polygon", minWithdraw: 1, fee: 0.5 },
-  ETH_POLYGON:  { name: "ETH",  network: "Polygon", minWithdraw: 0.001, fee: 0.0005 },
-  BTC:          { name: "BTC",  network: "Bitcoin", minWithdraw: 0.0001, fee: 0.00005 },
+  USDT: { name: "USDT", network: "Polygon", minWithdraw: 0, fee: 0 },
+  ETH_POLYGON:  { name: "ETH",  network: "Polygon", minWithdraw: 0, fee: 0 },
+  BTC:          { name: "BTC",  network: "Bitcoin", minWithdraw: 0, fee: 0 },
 };
 
 function getWalletCurrencyCandidates(currency) {
