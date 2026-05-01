@@ -46,6 +46,14 @@ function hasUsableAlchemyUrl() {
   return true;
 }
 
+
+function createEvmProvider(url) {
+  if (url.startsWith("ws://") || url.startsWith("wss://")) {
+    return new ethers.WebSocketProvider(url);
+  }
+  return new ethers.JsonRpcProvider(url);
+}
+
 function isLikelyBitcoinAddress(address) {
   if (!address) return false;
   if (address.includes("placeholder")) return false;
@@ -60,7 +68,7 @@ async function watchPolygon() {
   }
 
   const evmRpcUrl = getEvmRpcUrl();
-  const provider = new ethers.JsonRpcProvider(evmRpcUrl);
+  const provider = createEvmProvider(evmRpcUrl);
   debugLog("EVM RPC URL configured", evmRpcUrl ? "yes" : "no");
   const usdtWatcherEnabled = Boolean(USDT_CONTRACT);
   if (!usdtWatcherEnabled && IS_TESTNET) {
