@@ -258,6 +258,14 @@ async function watchBitcoin() {
           continue;
         }
 
+        const tipResp = await fetch(`${base}/blocks/tip/height`);
+        const tipText = await tipResp.text();
+        const tipHeight = parseInt(tipText, 10);
+        if (!Number.isFinite(tipHeight)) {
+          console.warn(`⚠️  BTC tip height parse failed: ${tipText}`);
+          continue;
+        }
+
         let txs;
         try {
           txs = JSON.parse(body);
@@ -269,20 +277,17 @@ async function watchBitcoin() {
         if (!Array.isArray(txs)) continue;
 
         for (const tx of txs) {
-          const out = tx.vout?.find((o) => o.scriptpubkey_address === wallet.deposit_address);
-          if (!out) continue;
-          const amount = out.value / 100_000_000; // satoshis to BTC
-          let confirmations = 0;
-          if (tx.status?.confirmed && tx.status.block_height) {
-            const tipResp = await fetch(`${base}/blocks/tip/height`);
-            const tipText = await tipResp.text();
-            const tipHeight = parseInt(tipText, 10);
-            if (Number.isFinite(tipHeight)) {
-              confirmations = Math.max(0, tipHeight - tx.status.block_height + 1);
-            }
-          }
+          if (!tx?.status?.confirmed || !tx?.status?.block_height) continue;
+          const confirmations = Math.max(0, tipHeight - tx.status.block_height + 1);
           if (confirmations < CONFIRMATIONS_REQUIRED.BTC) continue;
-          await creditDeposit(wallet.user_id, "BTC", amount, tx.txid, null, wallet.deposit_address);
+
+          for (let voutIndex = 0; voutIndex < (tx.vout || []).length; voutIndex++) {
+            const out = tx.vout[voutIndex];
+            if (out.scriptpubkey_address !== wallet.deposit_address) continue;
+            const amount = out.value / 100_000_000;
+            const txHash = `${tx.txid}:${voutIndex}`;
+            await creditDeposit(wallet.user_id, "BTC", amount, txHash, null, wallet.deposit_address);
+          }
         }
       }
     } catch (err) {

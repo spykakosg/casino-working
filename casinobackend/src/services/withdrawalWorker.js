@@ -21,104 +21,61 @@ function getWalletCurrencyCandidates(currency) {
 
 
 async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
-  const wif = process.env.TESTNET_BTC_WIF;
-  const privateKeyHex = process.env.TESTNET_BTC_PRIVATE_KEY_HEX;
-  const sharedPayoutKey = process.env.TESTNET_PAYOUT_PRIVATE_KEY;
-
-  let bitcoin;
-  let ecc;
-  let keyPair;
-  let network;
-  let fromAddress;
-  try {
-    bitcoin = require("bitcoinjs-lib");
-    ecc = require("tiny-secp256k1");
-    const { ECPairFactory } = require("ecpair");
-    const ECPair = ECPairFactory(ecc);
-    network = bitcoin.networks.testnet;
-
-    if (wif) {
-      keyPair = ECPair.fromWIF(wif, network);
-    } else if (privateKeyHex) {
-      keyPair = ECPair.fromPrivateKey(Buffer.from(privateKeyHex.replace(/^0x/, ""), "hex"), { network });
-    } else if (sharedPayoutKey) {
-      keyPair = ECPair.fromPrivateKey(Buffer.from(sharedPayoutKey.replace(/^0x/, ""), "hex"), { network });
-    } else {
-      throw new Error("Missing TESTNET_BTC_WIF, TESTNET_BTC_PRIVATE_KEY_HEX, and TESTNET_PAYOUT_PRIVATE_KEY");
-    }
-
-    const fromAddressExplicit = process.env.TESTNET_BTC_FROM_ADDRESS;
-    if (fromAddressExplicit) {
-      fromAddress = fromAddressExplicit;
-    }
-  } catch (err) {
-    throw new Error(`BTC withdrawals require valid BTC key config and bitcoinjs-lib/tiny-secp256k1/ecpair deps. ${err.message}`);
+  const mnemonic = process.env.TESTNET_BTC_MNEMONIC;
+  const derivationIndex = parseInt(process.env.TESTNET_BTC_PAYOUT_INDEX || "0", 10);
+  if (!mnemonic) {
+    throw new Error("Missing TESTNET_BTC_MNEMONIC");
   }
+
+  const bitcoin = require("bitcoinjs-lib");
+  const bip39 = require("bip39");
+  const ecc = require("tiny-secp256k1");
+  const { BIP32Factory } = require("bip32");
+  const { ECPairFactory } = require("ecpair");
+
+  bitcoin.initEccLib(ecc);
+  const bip32 = BIP32Factory(ecc);
+  const ECPair = ECPairFactory(ecc);
+  const network = bitcoin.networks.testnet;
   const base = (process.env.BTC_EXPLORER_BASE_URL || "https://blockstream.info/testnet/api").replace(/\/$/, "");
 
-  const candidateAddresses = [];
-  if (fromAddress) {
-    candidateAddresses.push(fromAddress);
-  } else {
-    const pubkey = Buffer.from(keyPair.publicKey);
-    const derived = [
-      bitcoin.payments.p2wpkh({ pubkey, network }).address,
-      bitcoin.payments.p2sh({ redeem: bitcoin.payments.p2wpkh({ pubkey, network }), network }).address,
-      bitcoin.payments.p2pkh({ pubkey, network }).address,
-    ].filter(Boolean);
-    candidateAddresses.push(...derived);
-  }
+  const seed = await bip39.mnemonicToSeed(mnemonic);
+  const root = bip32.fromSeed(seed, network);
+  const child = root.derivePath(`m/84'/1'/0'/0/${derivationIndex}`);
+  const fromAddress = bitcoin.payments.p2wpkh({ pubkey: Buffer.from(child.publicKey), network }).address;
+  if (!fromAddress) throw new Error("Failed to derive BTC payout address");
 
-  let utxos = [];
-  let selectedFromAddress = null;
-  for (const candidate of candidateAddresses) {
-    const utxoResp = await fetch(`${base}/address/${candidate}/utxo`);
-    if (!utxoResp.ok) throw new Error(`BTC UTXO fetch failed for ${candidate}: ${utxoResp.status}`);
-    const rows = await utxoResp.json();
-    if (Array.isArray(rows) && rows.length > 0) {
-      utxos = rows;
-      selectedFromAddress = candidate;
-      break;
-    }
-  }
-
-  if (!Array.isArray(utxos) || utxos.length === 0) {
-    throw new Error(`No BTC UTXOs available for payout wallet. Checked addresses: ${candidateAddresses.join(", ")}`);
-  }
-
-  fromAddress = selectedFromAddress || fromAddress;
-  console.log(`₿ BTC payout source address: ${fromAddress} (UTXOs: ${utxos.length})`);
+  const utxoResp = await fetch(`${base}/address/${fromAddress}/utxo`);
+  if (!utxoResp.ok) throw new Error(`BTC UTXO fetch failed: ${utxoResp.status}`);
+  const utxos = await utxoResp.json();
+  if (!Array.isArray(utxos) || utxos.length === 0) throw new Error("No funds in BTC payout wallet");
 
   const satoshisOut = Math.floor(Number(amountBtc) * 100_000_000);
-  const feeRate = parseFloat(process.env.BTC_TESTNET_FEE_RATE || "2"); // sat/vbyte
-
-  let selected = [];
-  let totalIn = 0;
-  for (const u of utxos) {
-    selected.push(u);
-    totalIn += u.value;
-    if (totalIn > satoshisOut + 500) break;
-  }
-
-  const estVBytes = selected.length * 68 + 2 * 31 + 10;
-  const fee = Math.ceil(estVBytes * feeRate);
-  if (totalIn < satoshisOut + fee) throw new Error("Insufficient BTC UTXOs for amount + fee");
-  const change = totalIn - satoshisOut - fee;
+  const fee = parseInt(process.env.BTC_TESTNET_FIXED_FEE_SATS || "1000", 10);
 
   const psbt = new bitcoin.Psbt({ network });
-  for (const u of selected) {
-    const txHexResp = await fetch(`${base}/tx/${u.txid}/hex`);
-    if (!txHexResp.ok) throw new Error(`BTC prevtx fetch failed: ${u.txid}`);
-    const txHex = await txHexResp.text();
-    psbt.addInput({ hash: u.txid, index: u.vout, nonWitnessUtxo: Buffer.from(txHex, "hex") });
+  let inputSum = 0;
+  for (const utxo of utxos) {
+    if (inputSum >= satoshisOut + fee) break;
+    psbt.addInput({
+      hash: utxo.txid,
+      index: utxo.vout,
+      witnessUtxo: {
+        script: bitcoin.address.toOutputScript(fromAddress, network),
+        value: utxo.value,
+      },
+    });
+    inputSum += utxo.value;
   }
 
+  if (inputSum < satoshisOut + fee) throw new Error("Not enough balance");
+
+  const change = inputSum - satoshisOut - fee;
   psbt.addOutput({ address: toAddress, value: satoshisOut });
-  if (change > 546) {
-    psbt.addOutput({ address: fromAddress, value: change });
-  }
+  if (change > 0) psbt.addOutput({ address: fromAddress, value: change });
 
-  selected.forEach((_, i) => psbt.signInput(i, keyPair));
+  const keyPair = ECPair.fromWIF(child.toWIF(), network);
+  psbt.signAllInputs(keyPair);
   psbt.finalizeAllInputs();
   const rawTx = psbt.extractTransaction().toHex();
 
@@ -127,6 +84,7 @@ async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
   if (!broadcastResp.ok) throw new Error(`BTC broadcast failed: ${txid}`);
   return txid.trim();
 }
+
 
 async function executePayout(withdrawal) {
   const provider = (process.env.PAYOUT_PROVIDER || "stub").toLowerCase();
