@@ -58,13 +58,38 @@ async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
     throw new Error("Missing BTC payout key config. Set TESTNET_BTC_MNEMONIC, TESTNET_BTC_WIF, or TESTNET_BTC_PRIVATE_KEY_HEX/TESTNET_PAYOUT_PRIVATE_KEY");
   }
 
-  if (!fromAddress) throw new Error("Failed to derive BTC payout address");
+  const pubkey = Buffer.from(keyPair.publicKey);
+  const candidateEntries = [];
+  if (fromAddress) {
+    const explicitType = fromAddress.startsWith("tb1") ? "p2wpkh" : (fromAddress.startsWith("2") ? "p2sh-p2wpkh" : "p2pkh");
+    candidateEntries.push({ address: fromAddress, type: explicitType });
+  }
+  candidateEntries.push(
+    { address: bitcoin.payments.p2wpkh({ pubkey, network }).address, type: "p2wpkh" },
+    { address: bitcoin.payments.p2sh({ redeem: bitcoin.payments.p2wpkh({ pubkey, network }), network }).address, type: "p2sh-p2wpkh" },
+    { address: bitcoin.payments.p2pkh({ pubkey, network }).address, type: "p2pkh" },
+  );
 
-  const utxoResp = await fetch(`${base}/address/${fromAddress}/utxo`);
-  if (!utxoResp.ok) throw new Error(`BTC UTXO fetch failed: ${utxoResp.status}`);
-  const utxos = await utxoResp.json();
-  if (!Array.isArray(utxos) || utxos.length === 0) throw new Error("No funds in BTC payout wallet");
+  const dedupedCandidates = candidateEntries.filter((c, i, arr) => c.address && arr.findIndex((x) => x.address === c.address) === i);
 
+  let utxos = [];
+  let selectedCandidate = null;
+  for (const candidate of dedupedCandidates) {
+    const utxoResp = await fetch(`${base}/address/${candidate.address}/utxo`);
+    if (!utxoResp.ok) continue;
+    const rows = await utxoResp.json();
+    if (Array.isArray(rows) && rows.length > 0) {
+      utxos = rows;
+      selectedCandidate = candidate;
+      break;
+    }
+  }
+
+  if (!selectedCandidate) {
+    throw new Error(`No funds in BTC payout wallet. Checked: ${dedupedCandidates.map((c) => c.address).join(", ")}`);
+  }
+
+  fromAddress = selectedCandidate.address;
   const satoshisOut = Math.floor(Number(amountBtc) * 100_000_000);
   const fee = parseInt(process.env.BTC_TESTNET_FIXED_FEE_SATS || "1000", 10);
 
@@ -72,14 +97,28 @@ async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
   let inputSum = 0;
   for (const utxo of utxos) {
     if (inputSum >= satoshisOut + fee) break;
-    psbt.addInput({
-      hash: utxo.txid,
-      index: utxo.vout,
-      witnessUtxo: {
-        script: bitcoin.address.toOutputScript(fromAddress, network),
-        value: utxo.value,
-      },
-    });
+    const baseInput = { hash: utxo.txid, index: utxo.vout };
+    if (selectedCandidate.type === "p2pkh") {
+      const txHexResp = await fetch(`${base}/tx/${utxo.txid}/hex`);
+      if (!txHexResp.ok) throw new Error(`BTC prevtx fetch failed: ${utxo.txid}`);
+      const txHex = await txHexResp.text();
+      psbt.addInput({ ...baseInput, nonWitnessUtxo: Buffer.from(txHex, "hex") });
+    } else if (selectedCandidate.type === "p2sh-p2wpkh") {
+      const redeem = bitcoin.payments.p2wpkh({ pubkey, network });
+      psbt.addInput({
+        ...baseInput,
+        witnessUtxo: { script: bitcoin.address.toOutputScript(fromAddress, network), value: utxo.value },
+        redeemScript: redeem.output,
+      });
+    } else {
+      psbt.addInput({
+        ...baseInput,
+        witnessUtxo: {
+          script: bitcoin.address.toOutputScript(fromAddress, network),
+          value: utxo.value,
+        },
+      });
+    }
     inputSum += utxo.value;
   }
 
