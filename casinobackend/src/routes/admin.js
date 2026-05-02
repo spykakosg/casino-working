@@ -16,6 +16,7 @@
 const express = require("express");
 const router = express.Router();
 const auth = require("../middleware/auth");
+const { getHotWalletSnapshot } = require("../services/hotWallet");
 
 // Admin guard middleware
 function adminOnly(req, res, next) {
@@ -26,6 +27,15 @@ function adminOnly(req, res, next) {
 }
 
 router.use(auth, adminOnly);
+
+router.get("/hot-wallet", async (_req, res) => {
+  try {
+    const snapshot = await getHotWalletSnapshot();
+    return res.json(snapshot);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
 
 // ─── Platform Stats ───────────────────────────────────────────────────────────
 router.get("/stats", async (req, res) => {

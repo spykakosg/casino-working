@@ -14,6 +14,7 @@ const { ECPairFactory } = require("ecpair");
 const { ethers } = require("ethers");
 const pool    = require("../db/pool");
 const { isTestnet, getEvmRpcUrl, getUsdtContract } = require("../config/networkMode");
+const { getBtcHotWallet } = require("./hotWallet");
 
 bitcoin.initEccLib(ecc);
 const bip32  = BIP32Factory(ecc);
@@ -22,13 +23,6 @@ const ECPair = ECPairFactory(ecc);
 const POLL_MS      = parseInt(process.env.WITHDRAWAL_WORKER_POLL_MS || "5000", 10);
 const MAX_ATTEMPTS = parseInt(process.env.WITHDRAWAL_MAX_ATTEMPTS   || "5",    10);
 const BATCH_SIZE   = parseInt(process.env.WITHDRAWAL_WORKER_BATCH   || "5",    10);
-
-async function deriveHotBtcKey(mnemonic, network, coin) {
-  const index = parseInt(process.env.BTC_HOT_WALLET_INDEX || "0", 10);
-  const seed = await bip39.mnemonicToSeed(mnemonic);
-  const root = bip32.fromSeed(seed, network);
-  return root.derivePath(`m/84'/${coin}'/0'/0/${index}`);
-}
 
 async function getBtcFeeRate(baseApiUrl) {
   try {
@@ -62,12 +56,7 @@ async function sendBTC(toAddress, amountBTC) {
   }
 
   // Use house hot wallet only
-  const child = await deriveHotBtcKey(mnemonic, network, coin);
-  const { address: fromAddress } = bitcoin.payments.p2wpkh({
-    pubkey: Buffer.from(child.publicKey),
-    network,
-  });
-  if (!fromAddress) throw new Error("Failed to derive BTC hot wallet address");
+  const { child, address: fromAddress } = await getBtcHotWallet();
 
   console.log(`🔑 BTC payout: spending from house hot wallet ${fromAddress}`);
 
