@@ -7,10 +7,6 @@
 
 require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env") });
 const { ethers } = require("ethers");
-const bitcoin = require("bitcoinjs-lib");
-const ecc = require("tiny-secp256k1");
-const { ECPairFactory } = require("ecpair");
-const ECPair = ECPairFactory(ecc);
 const pool = require("../db/pool");
 const { isTestnet, getEvmRpcUrl, getUsdtContract } = require("../config/networkMode");
 
@@ -26,18 +22,72 @@ function getWalletCurrencyCandidates(currency) {
 
 async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
   const wif = process.env.TESTNET_BTC_WIF;
-  const fromAddress = process.env.TESTNET_BTC_FROM_ADDRESS;
-  if (!wif || !fromAddress) {
-    throw new Error("Missing TESTNET_BTC_WIF or TESTNET_BTC_FROM_ADDRESS");
+  const privateKeyHex = process.env.TESTNET_BTC_PRIVATE_KEY_HEX;
+  const sharedPayoutKey = process.env.TESTNET_PAYOUT_PRIVATE_KEY;
+
+  let bitcoin;
+  let ecc;
+  let keyPair;
+  let network;
+  let fromAddress;
+  try {
+    bitcoin = require("bitcoinjs-lib");
+    ecc = require("tiny-secp256k1");
+    const { ECPairFactory } = require("ecpair");
+    const ECPair = ECPairFactory(ecc);
+    network = bitcoin.networks.testnet;
+
+    if (wif) {
+      keyPair = ECPair.fromWIF(wif, network);
+    } else if (privateKeyHex) {
+      keyPair = ECPair.fromPrivateKey(Buffer.from(privateKeyHex.replace(/^0x/, ""), "hex"), { network });
+    } else if (sharedPayoutKey) {
+      keyPair = ECPair.fromPrivateKey(Buffer.from(sharedPayoutKey.replace(/^0x/, ""), "hex"), { network });
+    } else {
+      throw new Error("Missing TESTNET_BTC_WIF, TESTNET_BTC_PRIVATE_KEY_HEX, and TESTNET_PAYOUT_PRIVATE_KEY");
+    }
+
+    const fromAddressExplicit = process.env.TESTNET_BTC_FROM_ADDRESS;
+    if (fromAddressExplicit) {
+      fromAddress = fromAddressExplicit;
+    }
+  } catch (err) {
+    throw new Error(`BTC withdrawals require valid BTC key config and bitcoinjs-lib/tiny-secp256k1/ecpair deps. ${err.message}`);
+  }
+  const base = (process.env.BTC_EXPLORER_BASE_URL || "https://blockstream.info/testnet/api").replace(/\/$/, "");
+
+  const candidateAddresses = [];
+  if (fromAddress) {
+    candidateAddresses.push(fromAddress);
+  } else {
+    const pubkey = Buffer.from(keyPair.publicKey);
+    const derived = [
+      bitcoin.payments.p2wpkh({ pubkey, network }).address,
+      bitcoin.payments.p2sh({ redeem: bitcoin.payments.p2wpkh({ pubkey, network }), network }).address,
+      bitcoin.payments.p2pkh({ pubkey, network }).address,
+    ].filter(Boolean);
+    candidateAddresses.push(...derived);
   }
 
-  const network = bitcoin.networks.testnet;
-  const keyPair = ECPair.fromWIF(wif, network);
-  const base = (process.env.BTC_EXPLORER_BASE_URL || "https://blockstream.info/testnet/api").replace(/\/$/, "");
-  const utxoResp = await fetch(`${base}/address/${fromAddress}/utxo`);
-  if (!utxoResp.ok) throw new Error(`BTC UTXO fetch failed: ${utxoResp.status}`);
-  const utxos = await utxoResp.json();
-  if (!Array.isArray(utxos) || utxos.length === 0) throw new Error("No BTC UTXOs available for payout wallet");
+  let utxos = [];
+  let selectedFromAddress = null;
+  for (const candidate of candidateAddresses) {
+    const utxoResp = await fetch(`${base}/address/${candidate}/utxo`);
+    if (!utxoResp.ok) throw new Error(`BTC UTXO fetch failed for ${candidate}: ${utxoResp.status}`);
+    const rows = await utxoResp.json();
+    if (Array.isArray(rows) && rows.length > 0) {
+      utxos = rows;
+      selectedFromAddress = candidate;
+      break;
+    }
+  }
+
+  if (!Array.isArray(utxos) || utxos.length === 0) {
+    throw new Error(`No BTC UTXOs available for payout wallet. Checked addresses: ${candidateAddresses.join(", ")}`);
+  }
+
+  fromAddress = selectedFromAddress || fromAddress;
+  console.log(`₿ BTC payout source address: ${fromAddress} (UTXOs: ${utxos.length})`);
 
   const satoshisOut = Math.floor(Number(amountBtc) * 100_000_000);
   const feeRate = parseFloat(process.env.BTC_TESTNET_FEE_RATE || "2"); // sat/vbyte
@@ -125,11 +175,11 @@ async function executePayout(withdrawal) {
         const txHash = await sendBtcTestnetWithdrawal(withdrawal.to_address, withdrawal.amount);
         return { txHash, provider };
       } catch (err) {
-        if (String(process.env.BTC_TESTNET_ALLOW_STUB_FALLBACK || "true").toLowerCase() === "true") {
-          console.warn(`⚠️ BTC testnet payout fallback to stub: ${err.message}`);
+        if (String(process.env.BTC_TESTNET_ALLOW_STUB_FALLBACK || "false").toLowerCase() === "true") {
+          console.warn(`⚠️ BTC testnet payout fallback to stub (BTC_TESTNET_ALLOW_STUB_FALLBACK=true): ${err.message}`);
           return { txHash: `btc_stub_${withdrawal.id}_${Date.now()}`, provider: `${provider}-btc-stub` };
         }
-        throw err;
+        throw new Error(`BTC payout failed and no stub fallback is allowed. ${err.message}`);
       }
     }
   }
