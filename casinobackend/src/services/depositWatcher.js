@@ -31,12 +31,14 @@ function isRealBtcAddress(address) {
 
 function hasUsableEvmUrl() {
   const url = getEvmRpcUrl();
-  return Boolean(url) && !url.includes("YOUR_ALCHEMY_KEY");
+  return Boolean(url) && !url.includes("YOUR_") && !url.includes("example");
 }
 
 function createEvmProvider(url) {
   if (url.startsWith("ws://") || url.startsWith("wss://")) {
-    return new ethers.WebSocketProvider(url);
+    const httpUrl = url.replace(/^wss?:\/\//, "https://");
+    console.warn("⚠️  WebSocket RPC URL detected for watcher; using HTTPS polling provider for stability.");
+    return new ethers.JsonRpcProvider(httpUrl);
   }
   return new ethers.JsonRpcProvider(url);
 }
