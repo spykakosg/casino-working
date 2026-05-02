@@ -216,6 +216,9 @@ export async function getSlotsBetHistory(limit = 20, offset = 0) {
 export async function adminGetStats() {
   return request("/api/admin/stats");
 }
+export async function adminGetHotWallet() {
+  return request("/api/admin/hot-wallet");
+}
 
 export async function adminGetUsers(limit = 50, offset = 0, search = "") {
   const q = search ? `&search=${encodeURIComponent(search)}` : "";
