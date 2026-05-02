@@ -21,12 +21,6 @@ function getWalletCurrencyCandidates(currency) {
 
 
 async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
-  const mnemonic = process.env.TESTNET_BTC_MNEMONIC;
-  const derivationIndex = parseInt(process.env.TESTNET_BTC_PAYOUT_INDEX || "0", 10);
-  if (!mnemonic) {
-    throw new Error("Missing TESTNET_BTC_MNEMONIC");
-  }
-
   const bitcoin = require("bitcoinjs-lib");
   const bip39 = require("bip39");
   const ecc = require("tiny-secp256k1");
@@ -39,10 +33,31 @@ async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
   const network = bitcoin.networks.testnet;
   const base = (process.env.BTC_EXPLORER_BASE_URL || "https://blockstream.info/testnet/api").replace(/\/$/, "");
 
-  const seed = await bip39.mnemonicToSeed(mnemonic);
-  const root = bip32.fromSeed(seed, network);
-  const child = root.derivePath(`m/84'/1'/0'/0/${derivationIndex}`);
-  const fromAddress = bitcoin.payments.p2wpkh({ pubkey: Buffer.from(child.publicKey), network }).address;
+  const mnemonic = process.env.TESTNET_BTC_MNEMONIC;
+  const derivationIndex = parseInt(process.env.TESTNET_BTC_PAYOUT_INDEX || "0", 10);
+  const wif = process.env.TESTNET_BTC_WIF;
+  const privateKeyHex = process.env.TESTNET_BTC_PRIVATE_KEY_HEX || process.env.TESTNET_PAYOUT_PRIVATE_KEY;
+
+  let keyPair;
+  let fromAddress = process.env.TESTNET_BTC_FROM_ADDRESS || null;
+
+  if (mnemonic) {
+    const seed = await bip39.mnemonicToSeed(mnemonic);
+    const root = bip32.fromSeed(seed, network);
+    const child = root.derivePath(`m/84'/1'/0'/0/${derivationIndex}`);
+    keyPair = ECPair.fromWIF(child.toWIF(), network);
+    fromAddress = fromAddress || bitcoin.payments.p2wpkh({ pubkey: Buffer.from(child.publicKey), network }).address;
+  } else if (wif) {
+    keyPair = ECPair.fromWIF(wif, network);
+    fromAddress = fromAddress || bitcoin.payments.p2wpkh({ pubkey: Buffer.from(keyPair.publicKey), network }).address;
+  } else if (privateKeyHex) {
+    const pk = Buffer.from(privateKeyHex.replace(/^0x/, ""), "hex");
+    keyPair = ECPair.fromPrivateKey(pk, { network });
+    fromAddress = fromAddress || bitcoin.payments.p2wpkh({ pubkey: Buffer.from(keyPair.publicKey), network }).address;
+  } else {
+    throw new Error("Missing BTC payout key config. Set TESTNET_BTC_MNEMONIC, TESTNET_BTC_WIF, or TESTNET_BTC_PRIVATE_KEY_HEX/TESTNET_PAYOUT_PRIVATE_KEY");
+  }
+
   if (!fromAddress) throw new Error("Failed to derive BTC payout address");
 
   const utxoResp = await fetch(`${base}/address/${fromAddress}/utxo`);
@@ -74,7 +89,6 @@ async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
   psbt.addOutput({ address: toAddress, value: satoshisOut });
   if (change > 0) psbt.addOutput({ address: fromAddress, value: change });
 
-  const keyPair = ECPair.fromWIF(child.toWIF(), network);
   psbt.signAllInputs(keyPair);
   psbt.finalizeAllInputs();
   const rawTx = psbt.extractTransaction().toHex();
