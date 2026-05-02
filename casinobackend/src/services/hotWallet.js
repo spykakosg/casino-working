@@ -44,7 +44,8 @@ async function getHotWalletSnapshot() {
   try {
     const rpcUrl = getEvmRpcUrl();
     const key = process.env.TESTNET_PAYOUT_PRIVATE_KEY;
-    if (rpcUrl && key) {
+    const hasUsableRpc = Boolean(rpcUrl) && !rpcUrl.includes("YOUR_") && !rpcUrl.includes("example");
+    if (hasUsableRpc && key) {
       const provider = new ethers.JsonRpcProvider(rpcUrl);
       const signer = new ethers.Wallet(key, provider);
       evm.address = signer.address;
@@ -55,6 +56,10 @@ async function getHotWalletSnapshot() {
         const decimals = await erc20.decimals();
         evm.usdtBalance = parseFloat(ethers.formatUnits(await erc20.balanceOf(signer.address), decimals));
       }
+    } else if (!hasUsableRpc) {
+      evm.error = "EVM RPC URL is missing/placeholder";
+    } else if (!key) {
+      evm.error = "TESTNET_PAYOUT_PRIVATE_KEY missing";
     }
   } catch {}
 

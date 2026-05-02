@@ -49,7 +49,8 @@ async function runSweepCycle() {
   console.log(`🧹 Sweep cycle (${snapshot.mode}) hot BTC=${snapshot.btc.balance ?? "?"} ETH=${snapshot.evm.nativeBalance ?? "?"} USDT=${snapshot.evm.usdtBalance ?? "?"}`);
   const rpcUrl = getEvmRpcUrl();
   const usdt = getUsdtContract();
-  if (!rpcUrl || !snapshot.evm?.address) {
+  const hasUsableRpc = Boolean(rpcUrl) && !rpcUrl.includes("YOUR_") && !rpcUrl.includes("example");
+  if (!hasUsableRpc || !snapshot.evm?.address) {
     console.warn("Skipping sweep: EVM RPC or hot-wallet address missing.");
     return;
   }
