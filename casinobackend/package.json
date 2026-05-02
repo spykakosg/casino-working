@@ -15,7 +15,7 @@
     "watcher-debug": "node -e \"process.env.WATCHER_DEBUG='true'; require('./src/services/depositWatcher.js')\""
   },
   "dependencies": {
-    "bip32": "^5.0.0",
+    "bip32": "^4.0.0",
     "bip39": "^3.1.0",
     "bcryptjs": "^3.0.3",
     "bitcoinjs-lib": "^6.1.7",

@@ -1,149 +1,127 @@
 /**
  * HD Wallet Address Generator
  *
- * Generates unique deposit addresses for each user from a single
- * master mnemonic using BIP-44 derivation paths.
+ * Generates unique BTC deposit addresses per user from a single master
+ * mnemonic using the EXACT same derivation as the working btc-testnet wallet:
+ *   BTC path: m/84'/1'/0'/0/{index}  (testnet)
+ *             m/84'/0'/0'/0/{index}  (mainnet)
+ *   Address type: p2wpkh (native segwit, tb1… / bc1…)
  *
- * Derivation paths:
- *   Polygon/ETH: m/44'/60'/0'/0/{index}
- *   Bitcoin:     m/44'/0'/0'/0/{index}
+ * For EVM currencies (ETH_POLYGON, USDT) derivation uses ethers HDNodeWallet.
  *
- * IMPORTANT: Back up your WALLET_MNEMONIC securely.
- * Losing it = losing access to all deposited funds.
- *
- * Run once to assign addresses to all users without one:
- *   node src/services/addressGenerator.js
- *
- * Or call generateAddressForUser(userId) programmatically.
+ * Env vars:
+ *   WALLET_MNEMONIC      — 12/24-word BIP-39 phrase (required for real addresses)
+ *   TESTNET_MODE         — "true" for testnet networks
  */
 
 require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env") });
+
+const bitcoin = require("bitcoinjs-lib");
+const bip39   = require("bip39");
+const ecc     = require("tiny-secp256k1");
+const { BIP32Factory } = require("bip32");
 const { ethers } = require("ethers");
-const pool = require("../db/pool");
+const pool    = require("../db/pool");
 const { isTestnet } = require("../config/networkMode");
 
-let hasWarnedInvalidMnemonic = false;
-let hasWarnedMissingBtcDeps = false;
+// Initialise secp256k1 — required by bitcoinjs-lib v6
+bitcoin.initEccLib(ecc);
+const bip32 = BIP32Factory(ecc);
 
-let bitcoin = null;
-let bip32 = null;
-let bip39 = null;
+const BTC_NETWORK = isTestnet ? bitcoin.networks.testnet : bitcoin.networks.bitcoin;
+const BTC_COIN    = isTestnet ? 1 : 0; // BIP-44 coin type
 
-try {
-  bitcoin = require("bitcoinjs-lib");
-  const ecc = require("tiny-secp256k1");
-  const { BIP32Factory } = require("bip32");
-  bip39 = require("bip39");
-  bitcoin.initEccLib(ecc);
-  bip32 = BIP32Factory(ecc);
-} catch {
-  // BTC derivation deps are optional in environments where npm install is restricted.
-}
+// ─── Mnemonic ────────────────────────────────────────────────────────────────
 
-function getNormalizedMnemonic() {
+function getMnemonic() {
   const raw = (process.env.WALLET_MNEMONIC || "").trim().toLowerCase();
   if (!raw) return null;
-  if (!bip39) return raw;
   if (!bip39.validateMnemonic(raw)) {
-    if (!hasWarnedInvalidMnemonic) {
-      hasWarnedInvalidMnemonic = true;
-      console.warn("⚠️ Invalid WALLET_MNEMONIC. Falling back to demo deposit addresses.");
-    }
+    console.warn("⚠️  WALLET_MNEMONIC is invalid — using placeholder deposit addresses.");
     return null;
   }
   return raw;
 }
 
-/**
- * Derive an EVM address (Polygon/ETH) at a given index
- */
+// ─── BTC address derivation (mirrors working wallet's wallet.js) ─────────────
+
+async function deriveBTCAddress(index) {
+  const mnemonic = getMnemonic();
+  if (!mnemonic) {
+    // Distinct prefix so the SQL placeholder filter works on both nets
+    return `${isTestnet ? "tb1" : "bc1"}q_placeholder_${index}`;
+  }
+
+  const seed   = await bip39.mnemonicToSeed(mnemonic);          // async, same as working wallet
+  const root   = bip32.fromSeed(seed, BTC_NETWORK);
+  const path   = `m/84'/${BTC_COIN}'/0'/0/${index}`;
+  const child  = root.derivePath(path);
+
+  const { address } = bitcoin.payments.p2wpkh({
+    pubkey: Buffer.from(child.publicKey),
+    network: BTC_NETWORK,
+  });
+
+  return address;
+}
+
+// ─── EVM address derivation ──────────────────────────────────────────────────
+
 function deriveEVMAddress(index) {
-  const fallback = `0xDEMO${String(index).padStart(36, "0")}`;
-  const mnemonic = getNormalizedMnemonic();
-  if (!mnemonic) return fallback;
+  const mnemonic = getMnemonic();
+  if (!mnemonic) return `0xDEMO${String(index).padStart(36, "0")}`;
 
   try {
-    const path = `m/44'/60'/0'/0/${index}`;
+    const path   = `m/44'/60'/0'/0/${index}`;
     const hdNode = ethers.HDNodeWallet.fromPhrase(mnemonic, undefined, path);
     return hdNode.address;
   } catch (err) {
-    if (!hasWarnedInvalidMnemonic) {
-      hasWarnedInvalidMnemonic = true;
-      console.warn("⚠️ Invalid WALLET_MNEMONIC. Falling back to demo deposit addresses.", err.message);
-    }
-    return fallback;
+    console.warn("⚠️  EVM address derivation failed:", err.message);
+    return `0xDEMO${String(index).padStart(36, "0")}`;
   }
 }
 
-function deriveBTCAddress(index) {
-  const fallback = `${isTestnet ? 'tb1' : 'bc1'}q_placeholder_${index}`;
-  if (!bitcoin || !bip32 || !bip39) {
-    if (!hasWarnedMissingBtcDeps) {
-      hasWarnedMissingBtcDeps = true;
-      console.warn("⚠️ Missing BTC libs (bitcoinjs-lib/bip32/bip39/tiny-secp256k1). Using placeholder BTC addresses.");
-    }
-    return fallback;
-  }
-  const mnemonic = getNormalizedMnemonic();
-  if (!mnemonic) return fallback;
+// ─── Assign addresses to one user ────────────────────────────────────────────
 
-  try {
-    const seed = bip39.mnemonicToSeedSync(mnemonic);
-    const network = isTestnet ? bitcoin.networks.testnet : bitcoin.networks.bitcoin;
-    const coinType = isTestnet ? 1 : 0;
-    const root = bip32.fromSeed(seed, network);
-    const child = root.derivePath(`m/84'/${coinType}'/0'/0/${index}`);
-    const payment = bitcoin.payments.p2wpkh({
-      pubkey: Buffer.from(child.publicKey),
-      network,
-    });
-    return payment.address || fallback;
-  } catch (err) {
-    console.warn("⚠️ BTC derivation failed. Falling back to placeholder address.", err.message);
-    return fallback;
-  }
-}
-
-/**
- * Assign deposit addresses to a single user
- */
 async function generateAddressForUser(userId) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // Use deterministic, per-currency derivation indexes so each wallet row
-    // has a unique deposit_address (wallets.deposit_address is UNIQUE).
-    const baseIndex = userId * 10;
+    // Each user gets a unique slice of the index space
+    const base = userId * 10;
 
     const currencies = [
-      { currency: "ETH_POLYGON", address: deriveEVMAddress(baseIndex + 0) },
-      { currency: "USDT", address: deriveEVMAddress(baseIndex + 1) },
-      { currency: "USDT_POLYGON", address: deriveEVMAddress(baseIndex + 2) },
-      { currency: "BTC", address: deriveBTCAddress(baseIndex + 3) },
+      { currency: "ETH_POLYGON", address: deriveEVMAddress(base + 0) },
+      { currency: "USDT",        address: deriveEVMAddress(base + 1) },
+      { currency: "BTC",         address: await deriveBTCAddress(base + 2) },
     ];
 
     let updatedRows = 0;
     for (const { currency, address } of currencies) {
-      const updateRes = await client.query(
-        `UPDATE wallets SET deposit_address = $1
+      const res = await client.query(
+        `UPDATE wallets
+         SET deposit_address = $1
          WHERE user_id = $2
-           AND currency = $3
+           AND currency   = $3
            AND (
              deposit_address IS NULL
              OR deposit_address = ''
              OR deposit_address LIKE '0xDEMO%'
+             OR deposit_address LIKE 'tb1q_placeholder_%'
              OR deposit_address LIKE 'bc1q_placeholder_%'
            )`,
         [address, userId, currency]
       );
-      updatedRows += updateRes.rowCount;
+      updatedRows += res.rowCount;
     }
 
     await client.query("COMMIT");
+
     if (updatedRows > 0) {
-      console.log(`✅ Assigned deposit addresses to user ${userId} (${updatedRows} wallet row(s) updated)`);
+      console.log(`✅ Assigned deposit addresses to user ${userId} (${updatedRows} row(s) updated)`);
     }
+
     return { currencies, updatedRows };
   } catch (err) {
     await client.query("ROLLBACK");
@@ -153,49 +131,32 @@ async function generateAddressForUser(userId) {
   }
 }
 
-/**
- * Backfill — assign addresses to all users who don't have one yet
- */
-async function backfillAddresses() {
-  const result = await pool.query(
-    `SELECT DISTINCT user_id
-     FROM wallets
-     WHERE deposit_address IS NULL
-       AND currency IN ('USDT', 'USDT_POLYGON', 'ETH_POLYGON', 'BTC')`
-  );
+// ─── Backfill all users missing addresses ────────────────────────────────────
 
-  console.log(`Assigning addresses to ${result.rows.length} users...`);
-  for (const row of result.rows) {
-    await generateAddressForUser(row.user_id);
-  }
-  console.log("Done.");
-  process.exit(0);
-}
-
-/**
- * Ensure all users with missing wallet addresses get assigned.
- * Safe to run on startup of background services.
- */
 async function ensureAllDepositAddresses() {
   const result = await pool.query(
     `SELECT DISTINCT user_id
      FROM wallets
      WHERE deposit_address IS NULL
-       AND currency IN ('USDT', 'USDT_POLYGON', 'ETH_POLYGON', 'BTC')`
+       AND currency IN ('USDT', 'ETH_POLYGON', 'BTC')`
   );
 
   let changedUsers = 0;
-  for (const row of result.rows) {
-    const changed = await generateAddressForUser(row.user_id);
-    if (changed.updatedRows > 0) changedUsers += 1;
+  for (const { user_id } of result.rows) {
+    const r = await generateAddressForUser(user_id);
+    if (r.updatedRows > 0) changedUsers++;
   }
-
   return changedUsers;
 }
 
-// Run if called directly
+async function backfillAddresses() {
+  const assigned = await ensureAllDepositAddresses();
+  console.log(`Done — assigned addresses for ${assigned} user(s).`);
+  process.exit(0);
+}
+
 if (require.main === module) {
-  backfillAddresses().catch(console.error);
+  backfillAddresses().catch((err) => { console.error(err); process.exit(1); });
 }
 
 module.exports = { generateAddressForUser, deriveEVMAddress, ensureAllDepositAddresses };
