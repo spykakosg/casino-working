@@ -1,9 +1,7 @@
 /**
  * Withdrawal Worker Service
  *
- * BTC: looks up the user's deposit_address from the DB, then scans the
- *      mnemonic to find the matching private key. This works regardless of
- *      which index or code version originally generated the address.
+ * Sends all withdrawals from house hot wallets.
  */
 
 require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env") });
@@ -25,39 +23,33 @@ const POLL_MS      = parseInt(process.env.WITHDRAWAL_WORKER_POLL_MS || "5000", 1
 const MAX_ATTEMPTS = parseInt(process.env.WITHDRAWAL_MAX_ATTEMPTS   || "5",    10);
 const BATCH_SIZE   = parseInt(process.env.WITHDRAWAL_WORKER_BATCH   || "5",    10);
 
-// ─── Find the private key that matches a known deposit address ────────────────
-//
-// Scans m/84'/{coin}'/0'/0/{i} for i in 0..MAX_SCAN_INDEX until the derived
-// p2wpkh address matches depositAddress. This is the source of truth — we use
-// whatever address is stored in the DB rather than recalculating by formula.
-
-const MAX_SCAN_INDEX = parseInt(process.env.BTC_KEY_SCAN_LIMIT || "5000", 10);
-
-async function findKeyForDepositAddress(mnemonic, depositAddress, network, coin) {
+async function deriveHotBtcKey(mnemonic, network, coin) {
+  const index = parseInt(process.env.BTC_HOT_WALLET_INDEX || "0", 10);
   const seed = await bip39.mnemonicToSeed(mnemonic);
   const root = bip32.fromSeed(seed, network);
+  return root.derivePath(`m/84'/${coin}'/0'/0/${index}`);
+}
 
-  for (let i = 0; i < MAX_SCAN_INDEX; i++) {
-    const child = root.derivePath(`m/84'/${coin}'/0'/0/${i}`);
-    const { address } = bitcoin.payments.p2wpkh({
-      pubkey: Buffer.from(child.publicKey),
-      network,
-    });
-    if (address === depositAddress) {
-      console.log(`🔑 Found key for ${depositAddress} at index ${i}`);
-      return child;
-    }
+async function getBtcFeeRate(baseApiUrl) {
+  try {
+    const resp = await fetch(`${baseApiUrl}/fee-estimates`);
+    if (!resp.ok) throw new Error(`status ${resp.status}`);
+    const data = await resp.json();
+    const fast = Number(data["1"]);
+    const normal = Number(data["3"]);
+    const economy = Number(data["6"]);
+    const minConfigured = Number(process.env.BTC_MIN_SAT_PER_VB || "1");
+    const chosen = Number.isFinite(economy) ? economy : (Number.isFinite(normal) ? normal : fast);
+    if (!Number.isFinite(chosen) || chosen <= 0) return minConfigured;
+    return Math.max(minConfigured, Math.floor(chosen));
+  } catch {
+    return Number(process.env.BTC_MIN_SAT_PER_VB || "1");
   }
-
-  throw new Error(
-    `Could not find private key for deposit address ${depositAddress} ` +
-    `(scanned ${MAX_SCAN_INDEX} indices). Check WALLET_MNEMONIC matches the one used to generate addresses.`
-  );
 }
 
 // ─── BTC Send ─────────────────────────────────────────────────────────────────
 
-async function sendBTC(toAddress, amountBTC, userId) {
+async function sendBTC(toAddress, amountBTC) {
   const network = isTestnet ? bitcoin.networks.testnet : bitcoin.networks.bitcoin;
   const coin    = isTestnet ? 1 : 0;
   const base    = (process.env.BTC_EXPLORER_BASE_URL ||
@@ -69,20 +61,16 @@ async function sendBTC(toAddress, amountBTC, userId) {
     throw new Error("Missing or invalid WALLET_MNEMONIC");
   }
 
-  // Get the actual deposit address from the DB — this is the source of truth
-  const walletRes = await pool.query(
-    "SELECT deposit_address FROM wallets WHERE user_id = $1 AND currency = 'BTC' LIMIT 1",
-    [userId]
-  );
-  if (!walletRes.rows.length || !walletRes.rows[0].deposit_address) {
-    throw new Error(`No BTC deposit address found in DB for user ${userId}`);
-  }
-  const fromAddress = walletRes.rows[0].deposit_address;
+  // Use house hot wallet only
+  const child = await deriveHotBtcKey(mnemonic, network, coin);
+  const { address: fromAddress } = bitcoin.payments.p2wpkh({
+    pubkey: Buffer.from(child.publicKey),
+    network,
+  });
+  if (!fromAddress) throw new Error("Failed to derive BTC hot wallet address");
 
-  console.log(`🔑 BTC payout: spending from user ${userId}'s deposit address ${fromAddress}`);
+  console.log(`🔑 BTC payout: spending from house hot wallet ${fromAddress}`);
 
-  // Find the private key that matches this address
-  const child   = await findKeyForDepositAddress(mnemonic, fromAddress, network, coin);
   const keyPair = ECPair.fromWIF(child.toWIF(), network);
 
   // Fetch UTXOs
@@ -91,17 +79,19 @@ async function sendBTC(toAddress, amountBTC, userId) {
   const utxos = await utxoResp.json();
 
   if (!Array.isArray(utxos) || utxos.length === 0) {
-    throw new Error(`No UTXOs found at ${fromAddress} (user ${userId})`);
+    throw new Error(`No UTXOs found at hot wallet address ${fromAddress}`);
   }
 
-  const fee         = parseInt(process.env.BTC_TESTNET_FIXED_FEE_SATS || "1000", 10);
   const satoshisOut = Math.round(amountBTC * 100_000_000);
 
   const psbt = new bitcoin.Psbt({ network });
   let inputSum = 0;
+  let selectedInputs = 0;
+  const feeRate = await getBtcFeeRate(base);
 
   for (const utxo of utxos) {
-    if (inputSum >= satoshisOut + fee) break;
+    const estimatedFee = Math.ceil((10 + ((selectedInputs + 1) * 68) + (2 * 31)) * feeRate);
+    if (inputSum >= satoshisOut + estimatedFee) break;
     psbt.addInput({
       hash: utxo.txid,
       index: utxo.vout,
@@ -111,15 +101,17 @@ async function sendBTC(toAddress, amountBTC, userId) {
       },
     });
     inputSum += utxo.value;
+    selectedInputs += 1;
   }
 
-  if (inputSum < satoshisOut + fee) {
+  const finalFee = Math.ceil((10 + (selectedInputs * 68) + (2 * 31)) * feeRate);
+  if (inputSum < satoshisOut + finalFee) {
     throw new Error(
-      `Insufficient BTC. Need ${satoshisOut + fee} sats, have ${inputSum} sats at ${fromAddress}`
+      `Insufficient BTC hot wallet balance. Need ${satoshisOut + finalFee} sats, have ${inputSum} sats at ${fromAddress}`
     );
   }
 
-  const change = inputSum - satoshisOut - fee;
+  const change = inputSum - satoshisOut - finalFee;
   psbt.addOutput({ address: toAddress, value: satoshisOut });
   if (change > 0) {
     psbt.addOutput({ address: fromAddress, value: change });
@@ -149,11 +141,21 @@ async function sendEVM(withdrawal) {
 
   const provider = new ethers.JsonRpcProvider(rpcUrl);
   const signer   = new ethers.Wallet(signerKey, provider);
+  const feeData = await provider.getFeeData();
+  const minPriority = ethers.parseUnits(process.env.EVM_MIN_PRIORITY_GWEI || "0.03", "gwei");
+  const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas && feeData.maxPriorityFeePerGas > minPriority
+    ? feeData.maxPriorityFeePerGas
+    : minPriority;
+  const maxFeePerGas = feeData.maxFeePerGas && feeData.maxFeePerGas > maxPriorityFeePerGas
+    ? feeData.maxFeePerGas
+    : maxPriorityFeePerGas * 2n;
+  const feeOverrides = { maxFeePerGas, maxPriorityFeePerGas };
 
   if (withdrawal.currency === "ETH_POLYGON") {
     const tx = await signer.sendTransaction({
       to:    withdrawal.to_address,
       value: ethers.parseEther(String(withdrawal.amount)),
+      ...feeOverrides,
     });
     return tx.hash;
   }
@@ -169,7 +171,8 @@ async function sendEVM(withdrawal) {
     const decimals = await erc20.decimals();
     const tx = await erc20.transfer(
       withdrawal.to_address,
-      ethers.parseUnits(String(withdrawal.amount), decimals)
+      ethers.parseUnits(String(withdrawal.amount), decimals),
+      feeOverrides
     );
     return tx.hash;
   }
@@ -193,7 +196,7 @@ async function executePayout(withdrawal) {
     if (!isTestnet) throw new Error("PAYOUT_PROVIDER=testnet requires TESTNET_MODE=true");
 
     if (withdrawal.currency === "BTC") {
-      const txHash = await sendBTC(withdrawal.to_address, parseFloat(withdrawal.amount), withdrawal.user_id);
+      const txHash = await sendBTC(withdrawal.to_address, parseFloat(withdrawal.amount));
       return { txHash };
     }
 
