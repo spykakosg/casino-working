@@ -109,6 +109,10 @@ TESTNET_BTC_WIF=c...           # preferred for testnet BTC payouts
 # optional HD mode (uses mnemonic + path instead of raw key)
 # TESTNET_BTC_MNEMONIC="word1 word2 ..."
 # TESTNET_BTC_DERIVATION_PATH=m/84'/1'/0'/0/0
+# optional manual source list override (comma-separated)
+# TESTNET_BTC_SOURCE_ADDRESSES=tb1...,2N...,m...
+# optional HD scan count when derivation path is used (default 20)
+# TESTNET_BTC_DERIVATION_SCAN_COUNT=50
 ```
 
 Notes:

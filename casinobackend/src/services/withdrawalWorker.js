@@ -26,12 +26,15 @@ async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
   const sharedPayoutKey = process.env.TESTNET_PAYOUT_PRIVATE_KEY;
   const mnemonic = (process.env.TESTNET_BTC_MNEMONIC || process.env.WALLET_MNEMONIC || "").trim().toLowerCase();
   const derivationPath = process.env.TESTNET_BTC_DERIVATION_PATH || "m/84'/1'/0'/0/0";
+  const scanCount = Math.max(1, parseInt(process.env.TESTNET_BTC_DERIVATION_SCAN_COUNT || "20", 10));
+  const sourceAddressesEnv = String(process.env.TESTNET_BTC_SOURCE_ADDRESSES || "").split(",").map((s) => s.trim()).filter(Boolean);
 
   let bitcoin;
   let ecc;
   let keyPair;
   let network;
   let fromAddress;
+  let hdDerivedAddresses = [];
   try {
     bitcoin = require("bitcoinjs-lib");
     ecc = require("tiny-secp256k1");
@@ -56,6 +59,21 @@ async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
       const root = bip32.fromSeed(seed, network);
       const child = root.derivePath(derivationPath);
       keyPair = ECPair.fromPrivateKey(Buffer.from(child.privateKey), { network });
+
+      const m = derivationPath.match(/^(.*\/)(\d+)$/);
+      if (m) {
+        const prefix = m[1];
+        for (let i = 0; i < scanCount; i += 1) {
+          const scanChild = root.derivePath(`${prefix}${i}`);
+          const pubkey = Buffer.from(scanChild.publicKey);
+          const candidates = [
+            bitcoin.payments.p2wpkh({ pubkey, network }).address,
+            bitcoin.payments.p2sh({ redeem: bitcoin.payments.p2wpkh({ pubkey, network }), network }).address,
+            bitcoin.payments.p2pkh({ pubkey, network }).address,
+          ].filter(Boolean);
+          hdDerivedAddresses.push(...candidates);
+        }
+      }
     } else {
       throw new Error("Missing TESTNET_BTC_WIF, TESTNET_BTC_PRIVATE_KEY_HEX, TESTNET_PAYOUT_PRIVATE_KEY, and TESTNET_BTC_MNEMONIC/WALLET_MNEMONIC");
     }
@@ -72,7 +90,14 @@ async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
   const candidateAddresses = [];
   if (fromAddress) {
     candidateAddresses.push(fromAddress);
-  } else {
+  }
+  if (sourceAddressesEnv.length > 0) {
+    candidateAddresses.push(...sourceAddressesEnv);
+  }
+  if (hdDerivedAddresses.length > 0) {
+    candidateAddresses.push(...hdDerivedAddresses);
+  }
+  if (candidateAddresses.length === 0) {
     const pubkey = Buffer.from(keyPair.publicKey);
     const derived = [
       bitcoin.payments.p2wpkh({ pubkey, network }).address,
@@ -82,9 +107,10 @@ async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
     candidateAddresses.push(...derived);
   }
 
+  const uniqueCandidates = [...new Set(candidateAddresses)];
   let utxos = [];
   let selectedFromAddress = null;
-  for (const candidate of candidateAddresses) {
+  for (const candidate of uniqueCandidates) {
     const utxoResp = await fetch(`${base}/address/${candidate}/utxo`);
     if (!utxoResp.ok) throw new Error(`BTC UTXO fetch failed for ${candidate}: ${utxoResp.status}`);
     const rows = await utxoResp.json();
@@ -96,7 +122,7 @@ async function sendBtcTestnetWithdrawal(toAddress, amountBtc) {
   }
 
   if (!Array.isArray(utxos) || utxos.length === 0) {
-    throw new Error(`No BTC UTXOs available for payout wallet. Checked addresses: ${candidateAddresses.join(", ")}`);
+    throw new Error(`No BTC UTXOs available for payout wallet. Checked addresses: ${uniqueCandidates.join(", ")}`);
   }
 
   fromAddress = selectedFromAddress || fromAddress;
