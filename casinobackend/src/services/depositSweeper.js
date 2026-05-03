@@ -61,19 +61,33 @@ async function sweepBtcUsersToHotWallet() {
   const coin = isTestnet ? 1 : 0;
   const feeJson = await (await fetch(`${base}/fee-estimates`)).json();
   const feeRate = Math.max(Number(process.env.BTC_MIN_SAT_PER_VB || "1"), Math.floor(Number(feeJson["6"] || feeJson["3"] || feeJson["1"] || 1)));
-  const users = await pool.query("SELECT user_id FROM wallets WHERE currency = 'BTC' ORDER BY user_id ASC");
+  const users = await pool.query("SELECT user_id, deposit_address FROM wallets WHERE currency = 'BTC' ORDER BY user_id ASC");
   const seed = await bip39.mnemonicToSeed(mnemonic);
   const root = bip32.fromSeed(seed, network);
   let checked = 0;
-  for (const { user_id } of users.rows) {
+  for (const { user_id, deposit_address } of users.rows) {
     checked++;
     const child = root.derivePath(`m/84'/${coin}'/0'/0/${Number(user_id) * 10 + 2}`);
     const { address: derivedAddress } = bitcoin.payments.p2wpkh({ pubkey: Buffer.from(child.publicKey), network });
     if (!derivedAddress) continue;
+    if (deposit_address && deposit_address !== derivedAddress) {
+      console.warn(`⚠️  BTC address mismatch user=${user_id}: db=${deposit_address} derived=${derivedAddress}`);
+    }
     const utxoResp = await fetch(`${base}/address/${derivedAddress}/utxo`);
     if (!utxoResp.ok) continue;
     const utxos = await utxoResp.json();
-    if (!Array.isArray(utxos) || utxos.length === 0) continue;
+    if (!Array.isArray(utxos) || utxos.length === 0) {
+      if (deposit_address && deposit_address !== derivedAddress) {
+        const dbUtxoResp = await fetch(`${base}/address/${deposit_address}/utxo`);
+        if (dbUtxoResp.ok) {
+          const dbUtxos = await dbUtxoResp.json();
+          if (Array.isArray(dbUtxos) && dbUtxos.length > 0) {
+            console.warn(`⚠️  Found BTC UTXO on DB address for user=${user_id}, but key derivation does not match. Cannot auto-sweep this wallet with current mnemonic/index.`);
+          }
+        }
+      }
+      continue;
+    }
     const keyPair = ECPair.fromWIF(child.toWIF(), network);
     const total = utxos.reduce((sum, u) => sum + Number(u.value || 0), 0);
     const fee = Math.ceil((10 + (utxos.length * 68) + 31) * feeRate);
