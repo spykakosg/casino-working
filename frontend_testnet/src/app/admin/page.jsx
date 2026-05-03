@@ -245,19 +245,6 @@ function StatsPanel() {
 
       {/* Reset button */}
       <div className="bg-casino-card border border-casino-border rounded-xl p-4">
-        <form onSubmit={handleHotWithdraw} className="bg-casino-card border border-casino-border rounded-xl p-4 space-y-3">
-        <h3 className="text-sm font-mono text-casino-muted uppercase tracking-widest">Manual Hot Wallet Withdrawal</h3>
-        <div className="grid md:grid-cols-3 gap-2">
-          <select value={hotCurrency} onChange={(e) => setHotCurrency(e.target.value)} className="bg-casino-surface border border-casino-border rounded-lg px-3 py-2 text-white font-mono text-sm">
-            {CURRENCIES.map(c => <option key={c} value={c}>{CURRENCY_LABELS[c]}</option>)}
-          </select>
-          <input value={hotAmount} onChange={(e) => setHotAmount(e.target.value)} placeholder="Amount" type="number" step="0.00000001" className="bg-casino-surface border border-casino-border rounded-lg px-3 py-2 text-white font-mono text-sm" />
-          <input value={hotAddress} onChange={(e) => setHotAddress(e.target.value)} placeholder="Destination address" className="bg-casino-surface border border-casino-border rounded-lg px-3 py-2 text-white font-mono text-sm" />
-        </div>
-        <div className="text-xs font-mono text-casino-muted">Network fee (auto, lowest safe): {hotFee !== null ? hotFee : "—"}</div>
-        <button disabled={hotSending} className="btn-gold px-4 py-2 text-xs font-mono">{hotSending ? "Sending..." : "Send from Hot Wallet"}</button>
-      </form>
-
       <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-mono text-casino-muted uppercase tracking-widest">Reset PnL</h3>
