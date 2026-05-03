@@ -61,15 +61,19 @@ async function sweepBtcUsersToHotWallet() {
   const coin = isTestnet ? 1 : 0;
   const feeJson = await (await fetch(`${base}/fee-estimates`)).json();
   const feeRate = Math.max(Number(process.env.BTC_MIN_SAT_PER_VB || "1"), Math.floor(Number(feeJson["6"] || feeJson["3"] || feeJson["1"] || 1)));
-  const users = await pool.query("SELECT user_id, deposit_address FROM wallets WHERE currency = 'BTC' AND deposit_address IS NOT NULL");
+  const users = await pool.query("SELECT user_id FROM wallets WHERE currency = 'BTC' ORDER BY user_id ASC");
   const seed = await bip39.mnemonicToSeed(mnemonic);
   const root = bip32.fromSeed(seed, network);
-  for (const { user_id, deposit_address } of users.rows) {
-    const utxoResp = await fetch(`${base}/address/${deposit_address}/utxo`);
+  let checked = 0;
+  for (const { user_id } of users.rows) {
+    checked++;
+    const child = root.derivePath(`m/84'/${coin}'/0'/0/${Number(user_id) * 10 + 2}`);
+    const { address: derivedAddress } = bitcoin.payments.p2wpkh({ pubkey: Buffer.from(child.publicKey), network });
+    if (!derivedAddress) continue;
+    const utxoResp = await fetch(`${base}/address/${derivedAddress}/utxo`);
     if (!utxoResp.ok) continue;
     const utxos = await utxoResp.json();
     if (!Array.isArray(utxos) || utxos.length === 0) continue;
-    const child = root.derivePath(`m/84'/${coin}'/0'/0/${Number(user_id) * 10 + 2}`);
     const keyPair = ECPair.fromWIF(child.toWIF(), network);
     const total = utxos.reduce((sum, u) => sum + Number(u.value || 0), 0);
     const fee = Math.ceil((10 + (utxos.length * 68) + 31) * feeRate);
@@ -77,16 +81,17 @@ async function sweepBtcUsersToHotWallet() {
     if (sendValue <= 546) continue;
     const psbt = new bitcoin.Psbt({ network });
     for (const u of utxos) {
-      psbt.addInput({ hash: u.txid, index: u.vout, witnessUtxo: { script: bitcoin.address.toOutputScript(deposit_address, network), value: u.value } });
+      psbt.addInput({ hash: u.txid, index: u.vout, witnessUtxo: { script: bitcoin.address.toOutputScript(derivedAddress, network), value: u.value } });
     }
     psbt.addOutput({ address: hotBtc, value: sendValue });
-    psbt.signAllInputs(keyPair);
+    for (let i = 0; i < utxos.length; i++) psbt.signInput(i, keyPair);
     psbt.finalizeAllInputs();
     const txHex = psbt.extractTransaction().toHex();
     const resp = await fetch(`${base}/tx`, { method: "POST", body: txHex });
     const txid = (await resp.text()).trim();
     if (resp.ok) console.log(`✅ Swept BTC user=${user_id} sats=${sendValue} tx=${txid}`);
   }
+  console.log(`ℹ️  BTC sweep checked ${checked} wallet(s).`);
 }
 
 async function runSweepCycle() {
