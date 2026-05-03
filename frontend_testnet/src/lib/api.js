@@ -264,6 +264,21 @@ export async function getPrices() {
   return request("/api/prices");
 }
 
+
+export async function adminEstimateHotWalletWithdrawal(currency, amount, toAddress) {
+  return request("/api/admin/hot-wallet/estimate", {
+    method: "POST",
+    body: JSON.stringify({ currency, amount, toAddress }),
+  });
+}
+
+export async function adminWithdrawHotWallet(currency, amount, toAddress) {
+  return request("/api/admin/hot-wallet/withdraw", {
+    method: "POST",
+    body: JSON.stringify({ currency, amount, toAddress }),
+  });
+}
+
 export async function adminGetPendingWithdrawals() {
   return request("/api/admin/withdrawals/pending");
 }
