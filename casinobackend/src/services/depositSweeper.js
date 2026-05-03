@@ -18,6 +18,20 @@ bitcoin.initEccLib(ecc);
 const bip32 = BIP32Factory(ecc);
 const ECPair = ECPairFactory(ecc);
 
+function findChildForBtcAddress(root, network, coin, targetAddress, preferredIndex) {
+  const tryIndices = [preferredIndex];
+  const scanMax = Number(process.env.BTC_SWEEP_ADDRESS_SCAN_MAX || "20000");
+  for (let i = 0; i <= scanMax; i++) {
+    if (i !== preferredIndex) tryIndices.push(i);
+  }
+  for (const idx of tryIndices) {
+    const child = root.derivePath(`m/84'/${coin}'/0'/0/${idx}`);
+    const { address } = bitcoin.payments.p2wpkh({ pubkey: Buffer.from(child.publicKey), network });
+    if (address === targetAddress) return { child, index: idx };
+  }
+  return null;
+}
+
 function getMnemonic() {
   return (process.env.WALLET_MNEMONIC || "").trim().toLowerCase();
 }
@@ -67,17 +81,26 @@ async function sweepBtcUsersToHotWallet() {
   let checked = 0;
   for (const { user_id, deposit_address } of users.rows) {
     checked++;
-    const child = root.derivePath(`m/84'/${coin}'/0'/0/${Number(user_id) * 10 + 2}`);
+    const preferredIndex = Number(user_id) * 10 + 2;
+    let child = root.derivePath(`m/84'/${coin}'/0'/0/${preferredIndex}`);
     const { address: derivedAddress } = bitcoin.payments.p2wpkh({ pubkey: Buffer.from(child.publicKey), network });
     if (!derivedAddress) continue;
+    let sweepAddress = derivedAddress;
     if (deposit_address && deposit_address !== derivedAddress) {
-      console.warn(`⚠️  BTC address mismatch user=${user_id}: db=${deposit_address} derived=${derivedAddress}`);
+      const found = findChildForBtcAddress(root, network, coin, deposit_address, preferredIndex);
+      if (found) {
+        child = found.child;
+        sweepAddress = deposit_address;
+        console.warn(`⚠️  BTC address mismatch user=${user_id}, recovered index=${found.index} for DB address.`);
+      } else {
+        console.warn(`⚠️  BTC address mismatch user=${user_id}: db=${deposit_address} derived=${derivedAddress}`);
+      }
     }
-    const utxoResp = await fetch(`${base}/address/${derivedAddress}/utxo`);
+    const utxoResp = await fetch(`${base}/address/${sweepAddress}/utxo`);
     if (!utxoResp.ok) continue;
     const utxos = await utxoResp.json();
     if (!Array.isArray(utxos) || utxos.length === 0) {
-      if (deposit_address && deposit_address !== derivedAddress) {
+      if (deposit_address && sweepAddress !== deposit_address) {
         const dbUtxoResp = await fetch(`${base}/address/${deposit_address}/utxo`);
         if (dbUtxoResp.ok) {
           const dbUtxos = await dbUtxoResp.json();
@@ -95,7 +118,7 @@ async function sweepBtcUsersToHotWallet() {
     if (sendValue <= 546) continue;
     const psbt = new bitcoin.Psbt({ network });
     for (const u of utxos) {
-      psbt.addInput({ hash: u.txid, index: u.vout, witnessUtxo: { script: bitcoin.address.toOutputScript(derivedAddress, network), value: u.value } });
+      psbt.addInput({ hash: u.txid, index: u.vout, witnessUtxo: { script: bitcoin.address.toOutputScript(sweepAddress, network), value: u.value } });
     }
     psbt.addOutput({ address: hotBtc, value: sendValue });
     for (let i = 0; i < utxos.length; i++) psbt.signInput(i, keyPair);
