@@ -34,7 +34,11 @@ function initCrash(server, db) {
   }
 
   room = new CrashRoom(db, broadcast);
-  room.start();
+  room.start().catch((err) => {
+    console.error("Crash game failed to start:", err.message);
+    console.error("Hint: verify DB credentials in DATABASE_URL (or PGUSER/PGPASSWORD/PGDATABASE).");
+    room = null;
+  });
 
   // Handle WS upgrade at /api/crash/ws
   server.on("upgrade", (req, socket, head) => {

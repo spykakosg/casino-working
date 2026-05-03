@@ -36,8 +36,23 @@ async function estimateWithdrawalNetworkFee(currency, toAddress, amount, feePrio
   const multiplier = FEE_PRIORITY_MULTIPLIER[feePriority] || FEE_PRIORITY_MULTIPLIER.medium;
 
   if (currency === "BTC") {
-    const base = parseFloat(process.env.BTC_WITHDRAWAL_NETWORK_FEE || "0.00005");
-    return parseFloat((base * multiplier).toFixed(8));
+    const baseApiUrl = (process.env.BTC_EXPLORER_BASE_URL || "https://blockstream.info/api").replace(/\/$/, "");
+    const minSatPerVb = Number(process.env.BTC_MIN_SAT_PER_VB || "1");
+    let satPerVb = minSatPerVb;
+    try {
+      const resp = await fetch(`${baseApiUrl}/fee-estimates`);
+      if (resp.ok) {
+        const feeData = await resp.json();
+        const economy = Number(feeData["6"]);
+        const normal = Number(feeData["3"]);
+        const fallback = Number(feeData["1"]);
+        const dynamic = Number.isFinite(economy) ? economy : (Number.isFinite(normal) ? normal : fallback);
+        if (Number.isFinite(dynamic) && dynamic > 0) satPerVb = Math.max(minSatPerVb, Math.floor(dynamic));
+      }
+    } catch {}
+    const estimatedVbytes = 140;
+    const sats = Math.ceil(estimatedVbytes * satPerVb * multiplier);
+    return parseFloat((sats / 100_000_000).toFixed(8));
   }
 
   const rpcUrl = getEvmRpcUrl();
