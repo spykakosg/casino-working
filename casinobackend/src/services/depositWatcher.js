@@ -179,6 +179,18 @@ async function watchPolygon() {
     console.warn("⚠️  TESTNET_USDT_CONTRACT not set — USDT watcher disabled");
   }
 
+  try {
+    await provider.getNetwork();
+  } catch (err) {
+    const msg = String(err?.shortMessage || err?.message || err);
+    if (msg.includes("exceeded maximum retry limit") || msg.includes("429")) {
+      console.warn("⚠️  EVM watcher disabled: RPC rate limit exceeded (429). Use another RPC or upgrade plan.");
+      return;
+    }
+    console.warn(`⚠️  EVM watcher disabled: RPC startup failed (${msg})`);
+    return;
+  }
+
   console.log(`👁  EVM watcher started (${isTestnet ? "testnet" : "Polygon"}) — ${usdtEnabled ? "ETH + USDT" : "ETH only"}`);
 
   // Watch USDT ERC-20 Transfer events
@@ -237,6 +249,15 @@ async function watchPolygon() {
       await creditDeposit(user_id, currency, amount, tx.hash, tx.from, tx.to);
     }
   }
+
+  provider.on("error", (err) => {
+    const msg = String(err?.shortMessage || err?.message || err);
+    if (msg.includes("exceeded maximum retry limit") || msg.includes("429")) {
+      console.warn("⚠️  EVM watcher RPC rate-limited (429). Waiting for next restart.");
+      return;
+    }
+    console.error("EVM provider error:", msg);
+  });
 
   provider.on("block", async (blockNumber) => {
     try {
