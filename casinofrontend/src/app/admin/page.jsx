@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import {
   adminGetStats, adminGetUsers, adminGetUser,
   adminBanUser, adminCreditUser, adminDeleteUser, adminResetPnl,
-  adminGetPendingWithdrawals, adminProcessWithdrawal, adminEstimateHotWalletWithdrawal, adminWithdrawHotWallet,
+  adminGetPendingWithdrawals, adminProcessWithdrawal, adminGetHotWallet, adminEstimateHotWalletWithdrawal, adminWithdrawHotWallet,
 } from "@/lib/api";
 
 const CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
@@ -79,6 +79,7 @@ function StatsPanel() {
   const [error, setError] = useState("");
   const [resetting, setResetting] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [hotWallet, setHotWallet] = useState(null);
 
   useEffect(() => { fetchStats(); }, []);
 
@@ -87,6 +88,8 @@ function StatsPanel() {
     try {
       const data = await adminGetStats();
       setStats(data);
+      const hw = await adminGetHotWallet();
+      setHotWallet(hw);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -134,6 +137,25 @@ function StatsPanel() {
         />
         <StatCard label="Pending Withdrawals" value={stats.pendingWithdrawals} large />
       </div>
+
+      {hotWallet && (
+        <div className="bg-casino-card border border-casino-border rounded-xl p-4">
+          <h3 className="text-sm font-mono text-casino-muted uppercase tracking-widest mb-3">Hot Wallet Balances ({hotWallet.mode})</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono">
+            <div className="bg-casino-surface rounded p-3">
+              <div className="text-casino-muted">BTC Address</div>
+              <div className="break-all">{hotWallet.btc?.address || "N/A"}</div>
+              <div className="mt-1 text-gold">{hotWallet.btc?.balance ?? "N/A"} BTC</div>
+            </div>
+            <div className="bg-casino-surface rounded p-3">
+              <div className="text-casino-muted">EVM Address</div>
+              <div className="break-all">{hotWallet.evm?.address || "N/A"}</div>
+              <div className="mt-1 text-gold">{hotWallet.evm?.nativeBalance ?? "N/A"} ETH</div>
+              <div className="text-gold">{hotWallet.evm?.usdtBalance ?? "N/A"} USDT</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Daily PnL */}
       <div className="bg-casino-card border border-casino-border rounded-xl p-4">
