@@ -165,6 +165,34 @@ const ERC20_ABI = [
   "function decimals() view returns (uint8)",
 ];
 
+// Cache of our deposit addresses for fast lookups without per-tx DB queries
+let evmDepositAddressCache = null; // Map<lowerAddress, { user_id, currency }>
+let evmCacheExpiry = 0;
+
+async function getEvmDepositAddresses() {
+  const now = Date.now();
+  if (evmDepositAddressCache && now < evmCacheExpiry) return evmDepositAddressCache;
+
+  const res = await pool.query(
+    `SELECT user_id, currency, deposit_address FROM wallets
+     WHERE deposit_address IS NOT NULL
+       AND currency = ANY($1::text[])`,
+    [["ETH_POLYGON", "ETH", "USDT", "USDT_POLYGON"]]
+  );
+
+  const map = new Map();
+  for (const row of res.rows) {
+    const key = row.deposit_address.toLowerCase();
+    // Prefer USDT over ETH if the same address serves both
+    if (!map.has(key) || row.currency.startsWith("USDT")) {
+      map.set(key, { user_id: row.user_id, currency: row.currency });
+    }
+  }
+  evmDepositAddressCache = map;
+  evmCacheExpiry = now + 5 * 60_000; // refresh every 5 minutes
+  return map;
+}
+
 async function watchPolygon() {
   if (!hasUsableEvmUrl()) {
     console.warn("⚠️  EVM RPC URL missing or invalid — Polygon/ETH watcher disabled");
@@ -179,12 +207,24 @@ async function watchPolygon() {
     console.warn("⚠️  TESTNET_USDT_CONTRACT not set — USDT watcher disabled");
   }
 
+  // Catch unhandled WebSocket-level errors so the process doesn't crash
+  process.on("uncaughtException", (err) => {
+    const msg = String(err?.message || err);
+    if (msg.includes("WS_ERR") || msg.includes("WebSocket")) {
+      console.warn("⚠️  WebSocket error caught — EVM watcher will attempt reconnect:", msg);
+      return;
+    }
+    // Re-throw non-WebSocket uncaught exceptions
+    console.error("Uncaught exception:", err);
+    process.exit(1);
+  });
+
   try {
     await provider.getNetwork();
   } catch (err) {
     const msg = String(err?.shortMessage || err?.message || err);
-    if (msg.includes("exceeded maximum retry limit") || msg.includes("429")) {
-      console.warn("⚠️  EVM watcher disabled: RPC rate limit exceeded (429). Use another RPC or upgrade plan.");
+    if (msg.includes("exceeded maximum retry limit") || msg.includes("429") || msg.includes("Monthly capacity")) {
+      console.warn("⚠️  EVM watcher disabled: RPC rate limit / monthly cap exceeded. Upgrade your Alchemy plan or use a different RPC URL.");
       return;
     }
     console.warn(`⚠️  EVM watcher disabled: RPC startup failed (${msg})`);
@@ -193,24 +233,18 @@ async function watchPolygon() {
 
   console.log(`👁  EVM watcher started (${isTestnet ? "testnet" : "Polygon"}) — ${usdtEnabled ? "ETH + USDT" : "ETH only"}`);
 
-  // Watch USDT ERC-20 Transfer events
+  // Watch USDT ERC-20 Transfer events (uses a single persistent filter — far cheaper than polling)
   if (usdtEnabled) {
     const contract = new ethers.Contract(usdtContract, ERC20_ABI, provider);
 
     contract.on("Transfer", async (from, to, value, event) => {
       try {
         const address = to.toLowerCase();
-        const userRes = await pool.query(
-          `SELECT user_id, currency FROM wallets
-           WHERE LOWER(deposit_address) = $1
-             AND currency = ANY($2::text[])
-           ORDER BY CASE WHEN currency = 'USDT' THEN 0 ELSE 1 END
-           LIMIT 1`,
-          [address, ["USDT", "USDT_POLYGON"]]
-        );
-        if (userRes.rows.length === 0) return;
+        const addrMap = await getEvmDepositAddresses();
+        const wallet  = addrMap.get(address);
+        if (!wallet) return;
 
-        const { user_id, currency } = userRes.rows[0];
+        const { user_id, currency } = wallet;
         const amount  = parseFloat(ethers.formatUnits(value, 6)); // USDT = 6 decimals
         const txHash  = event?.log?.transactionHash || null;
 
@@ -222,27 +256,32 @@ async function watchPolygon() {
     });
   }
 
-  // Watch native ETH by scanning each new block
+  // Watch native ETH by scanning each new block.
+  //
+  // KEY FIX: ethers v6's getBlock(n, true) returns full tx objects in
+  // block.prefetchedTransactions — NOT in block.transactions (which only has
+  // hashes). The old code fetched block.transactions and then called
+  // getTransaction() for every hash, creating hundreds of RPC calls per block
+  // and triggering the 429 rate-limit storm. Now we use prefetchedTransactions
+  // so the entire block costs exactly ONE RPC call.
   async function processBlock(blockNumber) {
-    const block = await provider.getBlock(blockNumber, true);
-    if (!block?.transactions) return;
+    const block = await provider.getBlock(blockNumber, true); // true = prefetch txs
+    if (!block) return;
 
-    for (const txRef of block.transactions) {
-      let tx = typeof txRef === "string" ? await provider.getTransaction(txRef) : txRef;
+    // Use prefetchedTransactions (full objects) — fall back to hashes only if missing
+    const txList = block.prefetchedTransactions ?? [];
+    if (txList.length === 0) return;
+
+    const addrMap = await getEvmDepositAddresses();
+    if (addrMap.size === 0) return;
+
+    for (const tx of txList) {
       if (!tx || !tx.to || tx.value === 0n) continue;
 
-      const address = tx.to.toLowerCase();
-      const userRes = await pool.query(
-        `SELECT user_id, currency FROM wallets
-         WHERE LOWER(deposit_address) = $1
-           AND currency = ANY($2::text[])
-         ORDER BY CASE WHEN currency = 'ETH_POLYGON' THEN 0 ELSE 1 END
-         LIMIT 1`,
-        [address, ["ETH_POLYGON", "ETH"]]
-      );
-      if (userRes.rows.length === 0) continue;
+      const wallet = addrMap.get(tx.to.toLowerCase());
+      if (!wallet) continue;
 
-      const { user_id, currency } = userRes.rows[0];
+      const { user_id, currency } = wallet;
       const amount = parseFloat(ethers.formatEther(tx.value));
 
       console.log(`💰 ${currency} deposit: ${amount} ETH → user ${user_id}`);
@@ -252,8 +291,12 @@ async function watchPolygon() {
 
   provider.on("error", (err) => {
     const msg = String(err?.shortMessage || err?.message || err);
-    if (msg.includes("exceeded maximum retry limit") || msg.includes("429")) {
-      console.warn("⚠️  EVM watcher RPC rate-limited (429). Waiting for next restart.");
+    if (
+      msg.includes("exceeded maximum retry limit") ||
+      msg.includes("Monthly capacity") ||
+      msg.includes("429")
+    ) {
+      console.warn("⚠️  EVM watcher RPC rate-limited / monthly cap hit. Upgrade Alchemy plan or switch RPC.");
       return;
     }
     console.error("EVM provider error:", msg);
@@ -263,6 +306,11 @@ async function watchPolygon() {
     try {
       await processBlock(blockNumber);
     } catch (err) {
+      const msg = String(err?.shortMessage || err?.message || err);
+      if (msg.includes("429") || msg.includes("Monthly capacity")) {
+        console.warn("⚠️  ETH block watcher skipping block due to rate limit:", blockNumber);
+        return;
+      }
       console.error("ETH block watcher error:", err);
     }
   });
