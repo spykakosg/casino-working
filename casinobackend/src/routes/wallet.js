@@ -30,10 +30,7 @@ function getWalletCurrencyCandidates(currency) {
 
 
 
-const FEE_PRIORITY_MULTIPLIER = { low: 0.9, medium: 1.0, high: 1.25 };
-
-async function estimateWithdrawalNetworkFee(currency, toAddress, amount, feePriority = "medium") {
-  const multiplier = FEE_PRIORITY_MULTIPLIER[feePriority] || FEE_PRIORITY_MULTIPLIER.medium;
+async function estimateWithdrawalNetworkFee(currency, toAddress, amount) {
 
   if (currency === "BTC") {
     const baseApiUrl = (process.env.BTC_EXPLORER_BASE_URL || "https://blockstream.info/api").replace(/\/$/, "");
@@ -51,7 +48,7 @@ async function estimateWithdrawalNetworkFee(currency, toAddress, amount, feePrio
       }
     } catch {}
     const estimatedVbytes = 140;
-    const sats = Math.ceil(estimatedVbytes * satPerVb * multiplier);
+    const sats = Math.ceil(estimatedVbytes * satPerVb);
     return parseFloat((sats / 100_000_000).toFixed(8));
   }
 
@@ -79,8 +76,7 @@ async function estimateWithdrawalNetworkFee(currency, toAddress, amount, feePrio
 
   const weiFee = gasLimit * gasPrice;
   const nativeFee = parseFloat(ethers.formatEther(weiFee));
-  const adjusted = nativeFee * multiplier;
-  return parseFloat(adjusted.toFixed(8));
+  return parseFloat(nativeFee.toFixed(8));
 }
 
 const withdrawalVelocity = new Map();
@@ -236,15 +232,36 @@ router.get("/deposits", auth, async (req, res) => {
   }
 });
 
-// ─── Request Withdrawal ───────────────────────────────────────────────────────
-router.post("/withdraw", auth, enforceWithdrawalVelocity, async (req, res) => {
-  const { currency, amount, toAddress, feePriority = "medium" } = req.body;
 
+// ─── Estimate Withdrawal Fee ──────────────────────────────────────────────────
+router.post("/withdraw/estimate", auth, async (req, res) => {
+  const { currency, amount, toAddress } = req.body;
   if (!currency || !amount || !toAddress) {
     return res.status(400).json({ error: "currency, amount, and toAddress are required" });
   }
-  if (!FEE_PRIORITY_MULTIPLIER[feePriority]) {
-    return res.status(400).json({ error: "feePriority must be low, medium, or high" });
+  if (!SUPPORTED_CURRENCIES.includes(currency)) {
+    return res.status(400).json({ error: "Unsupported currency" });
+  }
+
+  const withdrawAmount = parseFloat(amount);
+  if (isNaN(withdrawAmount) || withdrawAmount <= 0) {
+    return res.status(400).json({ error: "Invalid amount" });
+  }
+
+  try {
+    const networkFee = await estimateWithdrawalNetworkFee(currency, toAddress, withdrawAmount);
+    return res.json({ currency, amount: withdrawAmount, fee: networkFee, total: parseFloat((withdrawAmount + networkFee).toFixed(8)) });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to estimate withdrawal fee" });
+  }
+});
+
+// ─── Request Withdrawal ───────────────────────────────────────────────────────
+router.post("/withdraw", auth, enforceWithdrawalVelocity, async (req, res) => {
+  const { currency, amount, toAddress } = req.body;
+
+  if (!currency || !amount || !toAddress) {
+    return res.status(400).json({ error: "currency, amount, and toAddress are required" });
   }
   if (!SUPPORTED_CURRENCIES.includes(currency)) {
     return res.status(400).json({ error: "Unsupported currency" });
@@ -260,7 +277,7 @@ router.post("/withdraw", auth, enforceWithdrawalVelocity, async (req, res) => {
     return res.status(400).json({ error: `Minimum withdrawal is ${info.minWithdraw} ${info.name}` });
   }
 
-  const networkFee = await estimateWithdrawalNetworkFee(currency, toAddress, withdrawAmount, feePriority);
+  const networkFee = await estimateWithdrawalNetworkFee(currency, toAddress, withdrawAmount);
   const totalDeducted = parseFloat((withdrawAmount + networkFee).toFixed(8));
   const reviewRequired = withdrawAmount >= parseFloat(process.env.WITHDRAWAL_REVIEW_THRESHOLD || 5000);
 
