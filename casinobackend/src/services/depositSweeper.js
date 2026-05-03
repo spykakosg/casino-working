@@ -51,7 +51,8 @@ async function runSweepCycle() {
   const usdt = getUsdtContract();
   const hasUsableRpc = Boolean(rpcUrl) && !rpcUrl.includes("YOUR_") && !rpcUrl.includes("example");
   if (!hasUsableRpc || !snapshot.evm?.address) {
-    console.warn("Skipping sweep: EVM RPC or hot-wallet address missing.");
+    console.log("ℹ️  EVM sweep skipped: missing RPC URL or EVM hot-wallet address.");
+    console.log("ℹ️  BTC sweep is not enabled yet in this service.");
     return;
   }
 
@@ -92,8 +93,7 @@ async function runSweepCycle() {
       }
     }
   }
-
-  console.log("ℹ️ BTC sweep is not enabled yet in this service.");
+  console.log("ℹ️  BTC sweep is not enabled yet in this service.");
 }
 
 async function main() {
