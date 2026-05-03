@@ -7,7 +7,7 @@ import {
   adminGetStats, adminGetUsers, adminGetUser,
   adminBanUser, adminCreditUser, adminDeleteUser, adminResetPnl,
   adminGetPendingWithdrawals, adminProcessWithdrawal,
-  adminGetHotWallet,
+  adminGetHotWallet, adminEstimateHotWalletWithdrawal, adminWithdrawHotWallet,
 } from "@/lib/api";
 
 const CURRENCIES = ["USDT", "ETH_POLYGON", "BTC"];
@@ -245,7 +245,7 @@ function StatsPanel() {
 
       {/* Reset button */}
       <div className="bg-casino-card border border-casino-border rounded-xl p-4">
-        <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-mono text-casino-muted uppercase tracking-widest">Reset PnL</h3>
             <p className="text-xs text-casino-muted mt-1">Deletes all bet records. This cannot be undone.</p>
@@ -559,6 +559,11 @@ function WithdrawalsPanel() {
   const [error, setError] = useState("");
   const [processing, setProcessing] = useState({});
   const [txHashes, setTxHashes] = useState({});
+  const [hotCurrency, setHotCurrency] = useState("USDT");
+  const [hotAmount, setHotAmount] = useState("");
+  const [hotAddress, setHotAddress] = useState("");
+  const [hotFee, setHotFee] = useState(null);
+  const [hotSending, setHotSending] = useState(false);
 
   useEffect(() => { fetchWithdrawals(); }, []);
 
@@ -586,11 +591,47 @@ function WithdrawalsPanel() {
     }
   }
 
+
+  useEffect(() => {
+    const amount = parseFloat(hotAmount);
+    if (!hotAddress || isNaN(amount) || amount <= 0) return setHotFee(null);
+    adminEstimateHotWalletWithdrawal(hotCurrency, amount, hotAddress)
+      .then((r) => setHotFee(r.fee))
+      .catch(() => setHotFee(null));
+  }, [hotCurrency, hotAmount, hotAddress]);
+
+  async function handleHotWithdraw(e) {
+    e.preventDefault();
+    setHotSending(true);
+    try {
+      const resp = await adminWithdrawHotWallet(hotCurrency, parseFloat(hotAmount), hotAddress);
+      setHotAmount("");
+      setHotAddress("");
+      setHotFee(null);
+      setError(`Hot wallet withdrawal sent: ${resp.txHash}`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setHotSending(false);
+    }
+  }
   if (loading) return <div className="text-center text-casino-muted py-12 font-mono">Loading...</div>;
   if (error) return <ErrorBox message={error} />;
 
   return (
     <div className="space-y-4">
+      <form onSubmit={handleHotWithdraw} className="bg-casino-card border border-casino-border rounded-xl p-4 space-y-3">
+        <h3 className="text-sm font-mono text-casino-muted uppercase tracking-widest">Manual Hot Wallet Withdrawal</h3>
+        <div className="grid md:grid-cols-3 gap-2">
+          <select value={hotCurrency} onChange={(e) => setHotCurrency(e.target.value)} className="bg-casino-surface border border-casino-border rounded-lg px-3 py-2 text-white font-mono text-sm">
+            {CURRENCIES.map(c => <option key={c} value={c}>{CURRENCY_LABELS[c]}</option>)}
+          </select>
+          <input value={hotAmount} onChange={(e) => setHotAmount(e.target.value)} placeholder="Amount" type="number" step="0.00000001" className="bg-casino-surface border border-casino-border rounded-lg px-3 py-2 text-white font-mono text-sm" />
+          <input value={hotAddress} onChange={(e) => setHotAddress(e.target.value)} placeholder="Destination address" className="bg-casino-surface border border-casino-border rounded-lg px-3 py-2 text-white font-mono text-sm" />
+        </div>
+        <div className="text-xs font-mono text-casino-muted">Network fee (auto, lowest safe): {hotFee !== null ? hotFee : "—"}</div>
+        <button disabled={hotSending} className="btn-gold px-4 py-2 text-xs font-mono">{hotSending ? "Sending..." : "Send from Hot Wallet"}</button>
+      </form>
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-mono text-casino-muted uppercase tracking-widest">
           Pending Withdrawals ({withdrawals.length})

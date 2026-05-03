@@ -14,9 +14,17 @@
  */
 
 const express = require("express");
+const bitcoin = require("bitcoinjs-lib");
+const ecc = require("tiny-secp256k1");
+const { ECPairFactory } = require("ecpair");
+const { ethers } = require("ethers");
 const router = express.Router();
 const auth = require("../middleware/auth");
-const { getHotWalletSnapshot } = require("../services/hotWallet");
+const { getHotWalletSnapshot, getBtcHotWallet } = require("../services/hotWallet");
+const { isTestnet, getEvmRpcUrl, getUsdtContract, getBtcExplorerBaseUrl } = require("../config/networkMode");
+
+bitcoin.initEccLib(ecc);
+const ECPair = ECPairFactory(ecc);
 
 // Admin guard middleware
 function adminOnly(req, res, next) {
@@ -34,6 +42,108 @@ router.get("/hot-wallet", async (_req, res) => {
     return res.json(snapshot);
   } catch (err) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+async function getBtcFeeRate(baseApiUrl) {
+  try {
+    const resp = await fetch(`${baseApiUrl}/fee-estimates`);
+    const data = await resp.json();
+    const economy = Number(data["6"]);
+    const normal = Number(data["3"]);
+    const fast = Number(data["1"]);
+    const minConfigured = Number(process.env.BTC_MIN_SAT_PER_VB || "1");
+    const chosen = Number.isFinite(economy) ? economy : (Number.isFinite(normal) ? normal : fast);
+    return Math.max(minConfigured, Math.floor(chosen || minConfigured));
+  } catch {
+    return Number(process.env.BTC_MIN_SAT_PER_VB || "1");
+  }
+}
+
+async function estimateNetworkFee(currency, toAddress, amount) {
+  if (currency === "BTC") {
+    const feeRate = await getBtcFeeRate(getBtcExplorerBaseUrl());
+    return parseFloat(((Math.ceil(140 * feeRate)) / 100_000_000).toFixed(8));
+  }
+  const provider = new ethers.JsonRpcProvider(getEvmRpcUrl());
+  const feeData = await provider.getFeeData();
+  const gasPrice = feeData.maxFeePerGas || feeData.gasPrice;
+  if (!gasPrice) return 0;
+  let gasLimit;
+  if (currency === "ETH_POLYGON") {
+    gasLimit = await provider.estimateGas({ to: toAddress, value: ethers.parseEther(String(amount)) });
+  } else {
+    const usdt = getUsdtContract();
+    const iface = new ethers.Interface(["function transfer(address to, uint256 amount) returns (bool)", "function decimals() view returns (uint8)"]);
+    const decimalsResult = await provider.call({ to: usdt, data: iface.encodeFunctionData("decimals", []) });
+    const decimals = Number(iface.decodeFunctionResult("decimals", decimalsResult)[0]);
+    const data = iface.encodeFunctionData("transfer", [toAddress, ethers.parseUnits(String(amount), decimals)]);
+    gasLimit = await provider.estimateGas({ to: usdt, data });
+  }
+  return parseFloat(ethers.formatEther(gasLimit * gasPrice));
+}
+
+router.post("/hot-wallet/estimate", async (req, res) => {
+  const { currency, amount, toAddress } = req.body;
+  try {
+    const fee = await estimateNetworkFee(currency, toAddress, parseFloat(amount));
+    return res.json({ fee, total: parseFloat((parseFloat(amount) + fee).toFixed(8)) });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.post("/hot-wallet/withdraw", async (req, res) => {
+  const { currency, amount, toAddress } = req.body;
+  const amt = parseFloat(amount);
+  try {
+    if (currency === "BTC") {
+      const network = isTestnet ? bitcoin.networks.testnet : bitcoin.networks.bitcoin;
+      const base = getBtcExplorerBaseUrl().replace(/\/$/, "");
+      const { child, address: fromAddress } = await getBtcHotWallet();
+      const keyPair = ECPair.fromWIF(child.toWIF(), network);
+      const utxos = await (await fetch(`${base}/address/${fromAddress}/utxo`)).json();
+      const psbt = new bitcoin.Psbt({ network });
+      const out = Math.round(amt * 100_000_000);
+      const feeRate = await getBtcFeeRate(base);
+      let sum = 0; let ins = 0;
+      for (const u of utxos) {
+        const est = Math.ceil((10 + ((ins + 1) * 68) + (2 * 31)) * feeRate);
+        if (sum >= out + est) break;
+        psbt.addInput({ hash: u.txid, index: u.vout, witnessUtxo: { script: bitcoin.address.toOutputScript(fromAddress, network), value: u.value } });
+        sum += u.value; ins++;
+      }
+      const fee = Math.ceil((10 + (ins * 68) + (2 * 31)) * feeRate);
+      psbt.addOutput({ address: toAddress, value: out });
+      const change = sum - out - fee;
+      if (change > 0) psbt.addOutput({ address: fromAddress, value: change });
+      psbt.signAllInputs(keyPair); psbt.finalizeAllInputs();
+      const txHex = psbt.extractTransaction().toHex();
+      const resp = await fetch(`${base}/tx`, { method: "POST", body: txHex });
+      const txHash = (await resp.text()).trim();
+      if (!resp.ok) throw new Error(txHash);
+      return res.json({ success: true, txHash, fee: parseFloat((fee / 100_000_000).toFixed(8)) });
+    }
+
+    const provider = new ethers.JsonRpcProvider(getEvmRpcUrl());
+    const signer = new ethers.Wallet(process.env.TESTNET_PAYOUT_PRIVATE_KEY, provider);
+    const feeData = await provider.getFeeData();
+    const minPriority = ethers.parseUnits(process.env.EVM_MIN_PRIORITY_GWEI || "0.03", "gwei");
+    const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas && feeData.maxPriorityFeePerGas > minPriority ? feeData.maxPriorityFeePerGas : minPriority;
+    const maxFeePerGas = feeData.maxFeePerGas && feeData.maxFeePerGas > maxPriorityFeePerGas ? feeData.maxFeePerGas : maxPriorityFeePerGas * 2n;
+    const feeOverrides = { maxFeePerGas, maxPriorityFeePerGas };
+    let tx;
+    if (currency === "ETH_POLYGON") {
+      tx = await signer.sendTransaction({ to: toAddress, value: ethers.parseEther(String(amt)), ...feeOverrides });
+    } else {
+      const usdt = getUsdtContract();
+      const erc20 = new ethers.Contract(usdt, ["function transfer(address to, uint256 amount) returns (bool)", "function decimals() view returns (uint8)"], signer);
+      const decimals = await erc20.decimals();
+      tx = await erc20.transfer(toAddress, ethers.parseUnits(String(amt), decimals), feeOverrides);
+    }
+    return res.json({ success: true, txHash: tx.hash });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
   }
 });
 

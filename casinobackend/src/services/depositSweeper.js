@@ -6,9 +6,31 @@
 require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env") });
 
 const { ethers } = require("ethers");
+const bitcoin = require("bitcoinjs-lib");
+const bip39 = require("bip39");
+const ecc = require("tiny-secp256k1");
+const { BIP32Factory } = require("bip32");
+const { ECPairFactory } = require("ecpair");
 const pool = require("../db/pool");
-const { getHotWalletSnapshot } = require("./hotWallet");
-const { getEvmRpcUrl, getUsdtContract } = require("../config/networkMode");
+const { getHotWalletSnapshot, getBtcHotWallet } = require("./hotWallet");
+const { getEvmRpcUrl, getUsdtContract, getBtcExplorerBaseUrl, isTestnet } = require("../config/networkMode");
+bitcoin.initEccLib(ecc);
+const bip32 = BIP32Factory(ecc);
+const ECPair = ECPairFactory(ecc);
+
+function findChildForBtcAddress(root, network, coin, targetAddress, preferredIndex) {
+  const tryIndices = [preferredIndex];
+  const scanMax = Number(process.env.BTC_SWEEP_ADDRESS_SCAN_MAX || "20000");
+  for (let i = 0; i <= scanMax; i++) {
+    if (i !== preferredIndex) tryIndices.push(i);
+  }
+  for (const idx of tryIndices) {
+    const child = root.derivePath(`m/84'/${coin}'/0'/0/${idx}`);
+    const { address } = bitcoin.payments.p2wpkh({ pubkey: Buffer.from(child.publicKey), network });
+    if (address === targetAddress) return { child, index: idx };
+  }
+  return null;
+}
 
 function getMnemonic() {
   return (process.env.WALLET_MNEMONIC || "").trim().toLowerCase();
@@ -44,56 +66,106 @@ async function sweepUserUsdt(wallet, hotAddress, provider, usdt) {
   return { hash: tx.hash, amountRaw: bal.toString() };
 }
 
+async function sweepBtcUsersToHotWallet() {
+  const mnemonic = getMnemonic();
+  if (!mnemonic || !bip39.validateMnemonic(mnemonic)) return;
+  const { address: hotBtc } = await getBtcHotWallet();
+  const base = getBtcExplorerBaseUrl().replace(/\/$/, "");
+  const network = isTestnet ? bitcoin.networks.testnet : bitcoin.networks.bitcoin;
+  const coin = isTestnet ? 1 : 0;
+  const feeJson = await (await fetch(`${base}/fee-estimates`)).json();
+  const feeRate = Math.max(Number(process.env.BTC_MIN_SAT_PER_VB || "1"), Math.floor(Number(feeJson["6"] || feeJson["3"] || feeJson["1"] || 1)));
+  const users = await pool.query("SELECT user_id, deposit_address FROM wallets WHERE currency = 'BTC' ORDER BY user_id ASC");
+  const seed = await bip39.mnemonicToSeed(mnemonic);
+  const root = bip32.fromSeed(seed, network);
+  let checked = 0;
+  for (const { user_id, deposit_address } of users.rows) {
+    checked++;
+    const preferredIndex = Number(user_id) * 10 + 2;
+    let child = root.derivePath(`m/84'/${coin}'/0'/0/${preferredIndex}`);
+    const { address: derivedAddress } = bitcoin.payments.p2wpkh({ pubkey: Buffer.from(child.publicKey), network });
+    if (!derivedAddress) continue;
+    let sweepAddress = derivedAddress;
+    if (deposit_address && deposit_address !== derivedAddress) {
+      const found = findChildForBtcAddress(root, network, coin, deposit_address, preferredIndex);
+      if (found) {
+        child = found.child;
+        sweepAddress = deposit_address;
+        console.warn(`⚠️  BTC address mismatch user=${user_id}, recovered index=${found.index} for DB address.`);
+      } else {
+        console.warn(`⚠️  BTC address mismatch user=${user_id}: db=${deposit_address} derived=${derivedAddress}`);
+      }
+    }
+    const utxoResp = await fetch(`${base}/address/${sweepAddress}/utxo`);
+    if (!utxoResp.ok) continue;
+    const utxos = await utxoResp.json();
+    if (!Array.isArray(utxos) || utxos.length === 0) {
+      if (deposit_address && sweepAddress !== deposit_address) {
+        const dbUtxoResp = await fetch(`${base}/address/${deposit_address}/utxo`);
+        if (dbUtxoResp.ok) {
+          const dbUtxos = await dbUtxoResp.json();
+          if (Array.isArray(dbUtxos) && dbUtxos.length > 0) {
+            console.warn(`⚠️  Found BTC UTXO on DB address for user=${user_id}, but key derivation does not match. Cannot auto-sweep this wallet with current mnemonic/index.`);
+          }
+        }
+      }
+      continue;
+    }
+    const keyPair = ECPair.fromWIF(child.toWIF(), network);
+    const total = utxos.reduce((sum, u) => sum + Number(u.value || 0), 0);
+    const fee = Math.ceil((10 + (utxos.length * 68) + 31) * feeRate);
+    const sendValue = total - fee;
+    if (sendValue <= 546) continue;
+    const psbt = new bitcoin.Psbt({ network });
+    for (const u of utxos) {
+      psbt.addInput({ hash: u.txid, index: u.vout, witnessUtxo: { script: bitcoin.address.toOutputScript(sweepAddress, network), value: u.value } });
+    }
+    psbt.addOutput({ address: hotBtc, value: sendValue });
+    for (let i = 0; i < utxos.length; i++) psbt.signInput(i, keyPair);
+    psbt.finalizeAllInputs();
+    const txHex = psbt.extractTransaction().toHex();
+    const resp = await fetch(`${base}/tx`, { method: "POST", body: txHex });
+    const txid = (await resp.text()).trim();
+    if (resp.ok) console.log(`✅ Swept BTC user=${user_id} sats=${sendValue} tx=${txid}`);
+  }
+  console.log(`ℹ️  BTC sweep checked ${checked} wallet(s).`);
+}
+
 async function runSweepCycle() {
   const snapshot = await getHotWalletSnapshot();
   console.log(`🧹 Sweep cycle (${snapshot.mode}) hot BTC=${snapshot.btc.balance ?? "?"} ETH=${snapshot.evm.nativeBalance ?? "?"} USDT=${snapshot.evm.usdtBalance ?? "?"}`);
   const rpcUrl = getEvmRpcUrl();
   const usdt = getUsdtContract();
   const hasUsableRpc = Boolean(rpcUrl) && !rpcUrl.includes("YOUR_") && !rpcUrl.includes("example");
-  if (!hasUsableRpc || !snapshot.evm?.address) {
-    console.warn("Skipping sweep: EVM RPC or hot-wallet address missing.");
-    return;
-  }
-
-  const provider = new ethers.JsonRpcProvider(rpcUrl);
-  try {
-    await provider.getNetwork();
-  } catch (err) {
-    const msg = String(err?.shortMessage || err?.message || err);
-    if (msg.includes("exceeded maximum retry limit") || msg.includes("429")) {
-      console.warn("⚠️  Sweeper paused: EVM RPC rate limit exceeded (429).");
-      return;
-    }
-    console.warn(`⚠️  Sweeper paused: EVM RPC startup failed (${msg}).`);
-    return;
-  }
-
-  const users = await pool.query("SELECT DISTINCT user_id FROM wallets WHERE currency IN ('ETH_POLYGON','USDT') ORDER BY user_id ASC");
-
-  let stopForRateLimit = false;
-  for (const { user_id } of users.rows) {
-    if (stopForRateLimit) break;
+  if (hasUsableRpc && snapshot.evm?.address) {
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
     try {
-      const ethWallet = deriveUserEvmWallet(user_id, 0, provider);
-      const usdtWallet = deriveUserEvmWallet(user_id, 1, provider);
-
-      const ethSweep = await sweepUserEth(ethWallet, snapshot.evm.address, provider);
-      if (ethSweep) console.log(`✅ Swept ETH user=${user_id} amount=${ethSweep.amount} tx=${ethSweep.hash}`);
-
-      const usdtSweep = await sweepUserUsdt(usdtWallet, snapshot.evm.address, provider, usdt);
-      if (usdtSweep) console.log(`✅ Swept USDT user=${user_id} amountRaw=${usdtSweep.amountRaw} tx=${usdtSweep.hash}`);
-    } catch (err) {
-      const msg = String(err?.shortMessage || err?.message || err);
-      if (msg.includes("exceeded maximum retry limit") || msg.includes("429")) {
-        console.warn("⚠️  Sweeper hit RPC rate limit mid-cycle; stopping remaining users this cycle.");
-        stopForRateLimit = true;
-      } else {
-        console.warn(`Sweep failed for user ${user_id}: ${msg}`);
+      await provider.getNetwork();
+      const users = await pool.query("SELECT DISTINCT user_id FROM wallets WHERE currency IN ('ETH_POLYGON','USDT') ORDER BY user_id ASC");
+      let stopForRateLimit = false;
+      for (const { user_id } of users.rows) {
+        if (stopForRateLimit) break;
+        try {
+          const ethWallet = deriveUserEvmWallet(user_id, 0, provider);
+          const usdtWallet = deriveUserEvmWallet(user_id, 1, provider);
+          const ethSweep = await sweepUserEth(ethWallet, snapshot.evm.address, provider);
+          if (ethSweep) console.log(`✅ Swept ETH user=${user_id} amount=${ethSweep.amount} tx=${ethSweep.hash}`);
+          const usdtSweep = await sweepUserUsdt(usdtWallet, snapshot.evm.address, provider, usdt);
+          if (usdtSweep) console.log(`✅ Swept USDT user=${user_id} amountRaw=${usdtSweep.amountRaw} tx=${usdtSweep.hash}`);
+        } catch (err) {
+          const msg = String(err?.shortMessage || err?.message || err);
+          if (msg.includes("exceeded maximum retry limit") || msg.includes("429")) stopForRateLimit = true;
+          else console.warn(`Sweep failed for user ${user_id}: ${msg}`);
+        }
       }
+    } catch (err) {
+      console.warn(`⚠️  EVM sweep skipped: ${err.message}`);
     }
+  } else {
+    console.log("ℹ️  EVM sweep skipped: missing RPC URL or EVM hot-wallet address.");
   }
 
-  console.log("ℹ️ BTC sweep is not enabled yet in this service.");
+  try { await sweepBtcUsersToHotWallet(); } catch (err) { console.warn(`⚠️  BTC sweep skipped: ${err.message}`); }
 }
 
 async function main() {

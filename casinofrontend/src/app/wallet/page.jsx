@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import Navbar from "@/components/Navbar";
 import {
-  getBalances, getDepositAddress, requestWithdrawal,
+  getBalances, getDepositAddress, requestWithdrawal, estimateWithdrawalFee,
   getDepositHistory, getWithdrawalHistory,
 } from "@/lib/api";
 
@@ -34,7 +34,8 @@ export default function WalletPage() {
   const [withdrawError, setWithdrawError]   = useState("");
   const [withdrawSuccess, setWithdrawSuccess] = useState("");
   const [withdrawLoading, setWithdrawLoading] = useState(false);
-  const [feePriority, setFeePriority] = useState("medium");
+  const [estimatedFee, setEstimatedFee] = useState(null);
+  const [estimatingFee, setEstimatingFee] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -50,6 +51,27 @@ export default function WalletPage() {
   useEffect(() => {
     if (tab === "deposit") fetchDepositAddress();
   }, [tab, activeCurrency]);
+
+  useEffect(() => {
+    const amount = parseFloat(withdrawAmount);
+    if (!withdrawAddress || isNaN(amount) || amount <= 0) {
+      setEstimatedFee(null);
+      return;
+    }
+    let cancelled = false;
+    setEstimatingFee(true);
+    estimateWithdrawalFee(activeCurrency, amount, withdrawAddress)
+      .then((resp) => {
+        if (!cancelled) setEstimatedFee(resp.fee);
+      })
+      .catch(() => {
+        if (!cancelled) setEstimatedFee(null);
+      })
+      .finally(() => {
+        if (!cancelled) setEstimatingFee(false);
+      });
+    return () => { cancelled = true; };
+  }, [activeCurrency, withdrawAmount, withdrawAddress]);
 
   async function fetchBalances() {
     try {
@@ -86,7 +108,7 @@ export default function WalletPage() {
     setWithdrawSuccess("");
     setWithdrawLoading(true);
     try {
-      await requestWithdrawal(activeCurrency, parseFloat(withdrawAmount), withdrawAddress, feePriority);
+      await requestWithdrawal(activeCurrency, parseFloat(withdrawAmount), withdrawAddress);
       setWithdrawSuccess("Withdrawal submitted successfully!");
       setWithdrawAmount("");
       setWithdrawAddress("");
@@ -254,13 +276,11 @@ export default function WalletPage() {
                   />
                 </div>
 
-                <div>
-                  <label className="text-xs text-casino-muted font-mono uppercase tracking-widest block mb-2">Priority</label>
-                  <select value={feePriority} onChange={e => setFeePriority(e.target.value)} className="w-full bg-casino-surface border border-casino-border rounded-lg px-4 py-3 text-white font-mono focus:outline-none focus:border-gold transition-colors">
-                    <option value="low">Low (cheaper, slower)</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High (faster, higher fee)</option>
-                  </select>
+                <div className="bg-casino-dark border border-casino-border rounded-xl p-3 text-sm">
+                  <div className="text-casino-muted">Network fee (auto, lowest safe)</div>
+                  <div className="text-white font-mono mt-1">
+                    {estimatingFee ? "Estimating..." : estimatedFee !== null ? `${estimatedFee} ${CURRENCY_LABELS[activeCurrency].name}` : "Enter amount and address to estimate"}
+                  </div>
                 </div>
 
                 <button
