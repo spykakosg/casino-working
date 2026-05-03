@@ -56,9 +56,23 @@ async function runSweepCycle() {
   }
 
   const provider = new ethers.JsonRpcProvider(rpcUrl);
+  try {
+    await provider.getNetwork();
+  } catch (err) {
+    const msg = String(err?.shortMessage || err?.message || err);
+    if (msg.includes("exceeded maximum retry limit") || msg.includes("429")) {
+      console.warn("⚠️  Sweeper paused: EVM RPC rate limit exceeded (429).");
+      return;
+    }
+    console.warn(`⚠️  Sweeper paused: EVM RPC startup failed (${msg}).`);
+    return;
+  }
+
   const users = await pool.query("SELECT DISTINCT user_id FROM wallets WHERE currency IN ('ETH_POLYGON','USDT') ORDER BY user_id ASC");
 
+  let stopForRateLimit = false;
   for (const { user_id } of users.rows) {
+    if (stopForRateLimit) break;
     try {
       const ethWallet = deriveUserEvmWallet(user_id, 0, provider);
       const usdtWallet = deriveUserEvmWallet(user_id, 1, provider);
@@ -69,7 +83,13 @@ async function runSweepCycle() {
       const usdtSweep = await sweepUserUsdt(usdtWallet, snapshot.evm.address, provider, usdt);
       if (usdtSweep) console.log(`✅ Swept USDT user=${user_id} amountRaw=${usdtSweep.amountRaw} tx=${usdtSweep.hash}`);
     } catch (err) {
-      console.warn(`Sweep failed for user ${user_id}: ${err.message}`);
+      const msg = String(err?.shortMessage || err?.message || err);
+      if (msg.includes("exceeded maximum retry limit") || msg.includes("429")) {
+        console.warn("⚠️  Sweeper hit RPC rate limit mid-cycle; stopping remaining users this cycle.");
+        stopForRateLimit = true;
+      } else {
+        console.warn(`Sweep failed for user ${user_id}: ${msg}`);
+      }
     }
   }
 
